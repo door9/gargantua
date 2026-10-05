@@ -30,7 +30,8 @@ export async function importFiles(files, { onStatus } = {}) {
     try {
       results.push(await importOne(file, file.name, { onStatus: (m) => onStatus?.(`${i}/${files.length} · ${m}`) }));
     } catch (e) {
-      results.push({ name: file.name, error: e instanceof ParseError || e instanceof ImportError ? e.message : `가져오지 못했습니다: ${e?.message || e}` });
+      const quota = e?.name === 'QuotaExceededError' || /quota/i.test(e?.message || '');
+      results.push({ name: file.name, error: quota ? '이 기기의 저장 공간이 부족합니다. 안 읽는 문서를 지우거나 공간을 비워 주세요.' : e instanceof ParseError || e instanceof ImportError ? e.message : `가져오지 못했습니다: ${e?.message || e}` });
     }
   }
   return results;

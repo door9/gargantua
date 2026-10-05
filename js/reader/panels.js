@@ -60,7 +60,19 @@ async function fillToc(r, body, done) {
     done?.();
     r.goToLoc(fromGlobal(book, g), { divided: false });
   });
-  body.append(h('div', { class: 'toc-slider' }, slider, label));
+  const ticks = h('div', { class: 'toc-ticks', 'aria-hidden': 'true' });
+  for (const ann of r.annsOfDoc('hl')) {
+    const res = r.resolve(ann);
+    if (!res) continue;
+    const at = toGlobal(book, res.u, res.start) / Math.max(1, book.chars);
+    ticks.append(h('i', { class: `c${ann.color || 0}${ann.note ? ' n' : ''}`, style: { left: `${(at * 100).toFixed(2)}%` } }));
+  }
+  for (const b of r.annsOfDoc('bm')) {
+    const a = b.anchor || {};
+    const at = toGlobal(book, a.s || 0, a.o || 0) / Math.max(1, book.chars);
+    ticks.append(h('i', { class: 'bm', style: { left: `${(at * 100).toFixed(2)}%` } }));
+  }
+  body.append(h('div', { class: 'toc-slider' }, h('div', { class: 'toc-track' }, slider, ticks), label));
   const entries = book.toc.length ? book.toc : r.chapters.map((c) => ({ title: c.title, level: 1, ...fromGlobal(book, c.start) }));
   if (!entries.length) {
     body.append(h('p', { class: 'empty-note' }, '이 문서에서 제목이나 목차 정보를 찾지 못했습니다.'));

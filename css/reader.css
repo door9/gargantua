@@ -261,3 +261,17 @@
 .textLayer br::selection { background: transparent; }
 .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
 .textLayer.selecting .endOfContent { top: 0; }
+
+/* 목차 위치 막대 위 '생각의 지도'(칠한 곳·책갈피) */
+.toc-track { position: relative; flex: 1; display: flex; }
+.toc-track .toc-range { flex: 1; position: relative; z-index: 1; }
+.toc-ticks { position: absolute; left: 8px; right: 8px; top: calc(50% + 7px); height: 7px; pointer-events: none; }
+.toc-ticks i { position: absolute; top: 0; width: 3px; height: 7px; margin-left: -1px; border-radius: 1px; background: var(--c); }
+.toc-ticks i.n { height: 10px; top: -1px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); }
+.toc-ticks i.bm { background: var(--horizon); width: 2px; height: 11px; top: -2px; }
+.annpop-rel { display: grid; gap: 4px; border-top: 1px solid rgba(255, 255, 255, .12); padding-top: 8px; }
+.annpop-rel-t { font-size: 11px; letter-spacing: .08em; color: #E8A25A; font-weight: 800; }
+.annpop-rel-i { display: grid; text-align: left; gap: 1px; padding: 6px 8px; border-radius: 8px; color: inherit; }
+.annpop-rel-i:hover { background: rgba(255, 255, 255, .08); }
+.annpop-rel-i span { font-size: 13px; }
+.annpop-rel-i small { font-size: 11px; opacity: .65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

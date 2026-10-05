@@ -27,11 +27,17 @@ export function lookupMenu(anchor, text) {
     if (!latin) keys.push('wikiKo', 'namu');
   }
   keys.push('web', 'papago');
-  menu(anchor, keys.map((k) => ({
-    label: LOOKUPS[k].label,
-    icon: 'external',
-    onClick: () => window.open(LOOKUPS[k].url(q), '_blank', 'noopener'),
-  })), { title: `“${q.length > 24 ? `${q.slice(0, 24)}…` : q}” 찾아보기` });
+  const items = [];
+  if (q.length <= 60) {
+    items.push({
+      label: '내 서재 전체에서', icon: 'library', hint: '다른 책 어디에 나오는지',
+      onClick: () => import('../main.js').then((m) => m.navigate(`#/search?q=${encodeURIComponent(q)}`)),
+    }, { divider: true });
+  }
+  for (const k of keys) {
+    items.push({ label: LOOKUPS[k].label, icon: 'external', onClick: () => window.open(LOOKUPS[k].url(q), '_blank', 'noopener') });
+  }
+  menu(anchor, items, { title: `“${q.length > 24 ? `${q.slice(0, 24)}…` : q}” 찾아보기` });
 }
 
 export function citeText(doc, ann, where = '') {

@@ -17,7 +17,7 @@ import { Painter, HL_SUPPORTED } from './painter.js';
 import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from './chapters.js';
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
-import { lookupMenu, citeText, noteEditor } from './actions.js';
+import { lookupMenu, citeText, noteEditor, tagsOf } from './actions.js';
 import { fetchRemoteFile } from '../sync/sync.js';
 
 export const COLORS = [
@@ -78,7 +78,7 @@ class Reader {
       this.pos = pos;
       if (this.isPdf) await this.loadPdf(); else await this.loadText();
       if (!this.alive) return;
-      await this.mountView(this.initialView(), { loc: this.initialLoc() });
+      await this.mountView(this.initialView(), { loc: this.initialLoc(), fresh: true });
       savePos(this.doc.id, { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') });
       saveDoc({ id: this.doc.id, lastOpenedAt: now() }, { silent: true }).catch(() => {});
       this.setLoading(null);
@@ -119,14 +119,18 @@ class Reader {
     this.chapters = buildChapters(this.book, this.texts);
     if (this.doc.format === 'epub' || this.doc.format === 'docx') {
       const blob = await requireFile(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
-      this.res = await loadResources(this.doc, blob);
+      const res = await loadResources(this.doc, blob);
+      if (!this.alive) { res.revoke(); return; }
+      this.res = res;
     }
   }
 
   async loadPdf() {
     const blob = await requireFile(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
     this.setLoading('PDF 여는 중');
-    this.pdf = await openPdf(blob);
+    const pdf = await openPdf(blob);
+    if (!this.alive) { closePdf(pdf); return; }
+    this.pdf = pdf;
     this.texts = [];
     this.pdfToc = null;
     this.pdfTextsPromise = loadPdfTexts(this.doc, this.pdf).catch(() => null);
@@ -216,7 +220,8 @@ class Reader {
   }
 
   // ── 보기 만들기 ──
-  async mountView(kind, { loc } = {}) {
+  // fresh: 문서를 처음 열 때(무작위 보기면 새 장을 고른다). 보기만 바꿀 때는 자리를 지킨다
+  async mountView(kind, { loc, fresh = false } = {}) {
     if (this.view) {
       this.view.destroy();
       this.view = null;
@@ -228,10 +233,10 @@ class Reader {
     await this.view.mount(this.host);
     if (kind === 'flow') {
       this.mode = this.pos.mode || 'full';
-      if (this.opts.mode) this.mode = this.opts.mode;
-      await this.renderFlowMode(loc, { fresh: true });
+      if (fresh && this.opts.mode) this.mode = this.opts.mode;
+      await this.renderFlowMode(loc, { fresh });
     } else if (kind === 'paged') {
-      this.mode = 'full';
+      this.mode = this.pos.mode || 'full';
       await this.view.showSection(loc.s, { o: loc.o });
     } else {
       this.mode = this.pos.mode === 'random' ? 'random' : 'full';
@@ -274,7 +279,7 @@ class Reader {
     const loc = this.view?.currentLoc() || this.initialLoc();
     this.setLoading('보기 바꾸는 중');
     await sleep(10);
-    await this.mountView(kind, { loc });
+    await this.mountView(kind, { loc, fresh: false });
     this.setLoading(null);
     savePos(this.doc.id, { view: kind });
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
@@ -848,6 +853,22 @@ class Reader {
     })));
     box.append(dots);
     if (ann.note) box.append(h('div', { class: 'annpop-note' }, ann.note));
+    const related = this.relatedNotes(ann);
+    if (related.length) {
+      const list = h('div', { class: 'annpop-rel' }, h('div', { class: 'annpop-rel-t' }, '같은 태그의 생각'));
+      for (const o of related) {
+        const d = state.docs.get(o.docId);
+        list.append(h('button', {
+          class: 'annpop-rel-i',
+          onclick: () => {
+            closePopovers();
+            if (o.docId === this.doc.id) this.jumpToAnn(o.id);
+            else import('../main.js').then((m) => m.openDoc(o.docId, { ann: o.id }));
+          },
+        }, h('span', null, (o.note || '').replace(/\s+/g, ' ').slice(0, 60)), h('small', null, `${d?.title || ''} · “${(o.anchor?.quote || '').slice(0, 24)}”`)));
+      }
+      box.append(list);
+    }
     const row = h('div', { class: 'annpop-row' },
       selBtn('note', ann.note ? '메모 수정' : '메모', async () => {
         closePopovers();
@@ -864,6 +885,18 @@ class Reader {
       selBtn('trash', '삭제', () => { closePopovers(); this.deleteAnn(ann); }));
     box.append(row);
     popover(anchor, box, { className: 'annpop-wrap' });
+  }
+
+  relatedNotes(ann) {
+    const tags = tagsOf(ann.note);
+    if (!tags.length) return [];
+    const out = [];
+    for (const o of state.anns.values()) {
+      if (o.deleted || o.id === ann.id || o.kind !== 'hl' || !o.note) continue;
+      if (state.docs.get(o.docId)?.deleted) continue;
+      if (tagsOf(o.note).some((t) => tags.includes(t))) out.push(o);
+    }
+    return out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 4);
   }
 
   locLabel(ann) {

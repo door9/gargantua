@@ -6,7 +6,7 @@ import { emit, on, debounce, dayKey, sha256Hex, uid, now } from '../util.js';
 import * as dbx from './dropbox.js';
 import { prepareMissing } from '../docs.js';
 
-export const REMOTE = '/web/library.json';
+export const REMOTE = '/web/library.json.gz';
 const FILES = '/web/files';
 const BACKUPS = '/web/backups';
 const SCHEMA = 1;
@@ -48,9 +48,12 @@ export async function initSync() {
     setTimeout(() => syncNow({ reason: 'start' }), 1200);
   }
   const soon = debounce(() => syncNow({ reason: 'change' }), 6000);
+  // 읽던 위치만 바뀐 것은 몇 분에 한 번(나갈 때는 바로) — 휴대폰 데이터를 아낀다
+  const posSoon = debounce(() => syncNow({ reason: 'position' }), 180000);
   let firstDirtyAt = 0;
-  on('dirty', () => {
+  on('dirty', (d) => {
     if (!state.app.autoSync) return;
+    if (d?.kind === 'pos') { posSoon(); return; }
     if (!firstDirtyAt) firstDirtyAt = Date.now();
     // 계속 고치고 있어도 45초 넘게 미루지 않는다
     if (Date.now() - firstDirtyAt > 45000) { firstDirtyAt = 0; soon.flush?.(); syncNow({ reason: 'max-wait' }); } else soon();
@@ -86,6 +89,22 @@ export function syncNow(opts = {}) {
   return running;
 }
 
+// 기록 파일은 gzip으로 줄여 올린다(대개 5~8배 작아진다)
+export async function encodePayload(obj) {
+  const raw = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  if (typeof CompressionStream === 'undefined') return raw;
+  return new Response(raw.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+}
+
+export async function decodePayload(blob) {
+  const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+  if (head[0] === 0x1f && head[1] === 0x8b) {
+    const text = await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    return JSON.parse(text);
+  }
+  return JSON.parse(await blob.text());
+}
+
 function payload() {
   return {
     app: 'gargantua-web',
@@ -111,7 +130,7 @@ async function doSync({ reason = '', force = false } = {}) {
       let needUpload = false;
       if (m && (m.rev !== remoteRev || force)) {
         const got = await dbx.download(REMOTE);
-        const data = got ? JSON.parse(await got.blob.text()) : null;
+        const data = got ? await decodePayload(got.blob) : null;
         if (data) {
           if (data.app !== 'gargantua-web') throw new Error('Dropbox의 서재 파일 형식을 알 수 없습니다.');
           if ((data.schema || 1) > SCHEMA) {
@@ -130,7 +149,7 @@ async function doSync({ reason = '', force = false } = {}) {
       }
       if (!needUpload && !isDirty() && !state.statsDirty) break;
       const seq = state.changeSeq;
-      const body = new Blob([JSON.stringify(payload())], { type: 'application/json' });
+      const body = await encodePayload(payload());
       try {
         const res = await dbx.upload(REMOTE, body, { mode: m ? { '.tag': 'update', update: m.rev } : 'add' });
         remoteRev = res.rev;
@@ -302,7 +321,7 @@ async function dailySnapshot() {
   const today = dayKey();
   const last = await kvGet('lastSnapshot', '');
   if (last === today || !remoteRev) return;
-  await dbx.copy(REMOTE, `${BACKUPS}/library-${today}.json`);
+  await dbx.copy(REMOTE, `${BACKUPS}/library-${today}.json.gz`);
   await kvSet('lastSnapshot', today);
 }
 

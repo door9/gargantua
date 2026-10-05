@@ -16,6 +16,8 @@ let runId = 0;
 
 export async function render(container) {
   root = container;
+  const fromLink = new URLSearchParams(location.hash.split('?')[1] || '').get('q');
+  if (fromLink) { q = fromLink; scope = 'text'; }
   const input = h('input', { class: 'gfield', type: 'search', placeholder: '서재 전체에서 찾기', value: q, enterkeyhint: 'search', autofocus: true });
   const run = debounce(() => { q = input.value; search(); }, 300);
   input.addEventListener('input', run);
