@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; font-src 'self' blob: data:; connect-src 'self' blob: data: https://api.dropboxapi.com https://content.dropboxapi.com; worker-src 'self' blob:; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#F7F4EC">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Gargantua — 기록하며 읽는 개인 서재">
+<title>Gargantua</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/icon-64.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/reader.css">
+</head>
+<body>
+<div id="sprite"></div>
+<div id="app" class="app">
+  <nav class="g-nav" aria-label="주 메뉴"></nav>
+  <main id="app-view" class="app-view" tabindex="-1"></main>
+</div>
+<div id="app-reader" class="app-reader" hidden></div>
+<div id="boot" class="boot"><div class="boot-mark"><span>G</span></div><div class="boot-text">GARGANTUA</div></div>
+<noscript><p style="padding:24px">Gargantua는 자바스크립트가 필요합니다.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
