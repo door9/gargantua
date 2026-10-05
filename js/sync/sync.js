@@ -4,6 +4,7 @@ import { db, kvGet, kvSet } from '../db.js';
 import { state, liveDocs, putFile, getFile, localFileHashes, noteFileStored } from '../store.js';
 import { emit, on, debounce, dayKey, sha256Hex, uid, now } from '../util.js';
 import * as dbx from './dropbox.js';
+import { prepareMissing } from '../docs.js';
 
 export const REMOTE = '/web/library.json';
 const FILES = '/web/files';
@@ -150,6 +151,7 @@ async function doSync({ reason = '', force = false } = {}) {
     await kvSet('lastSyncAt', lastSyncAt);
     setStatus({ state: 'idle', label: '동기화됨', lastSync: lastSyncAt, error: '' });
     emit('sync-done', { uploaded, reason });
+    setTimeout(() => prepareMissing({ fetchFile: (d) => fetchRemoteFile(d) }).catch(() => {}), 1500);
   } catch (e) {
     console.warn('동기화 실패', e);
     const msg = e?.message || String(e);

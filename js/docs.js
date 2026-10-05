@@ -181,3 +181,38 @@ export function coverUrlCache() {
 export function emitLibraryChanged() {
   emit('docs', {});
 }
+
+// 다른 기기에서 넘어온 문서를 미리 준비(표지·글자 수·찾기용 글) — 동기화 뒤 한가할 때 조금씩
+let preparing = false;
+let budget = 120 * 1024 * 1024;
+export async function prepareMissing({ fetchFile, maxFile = 25 * 1024 * 1024 } = {}) {
+  if (preparing) return;
+  preparing = true;
+  try {
+    for (const doc of liveDocs()) {
+      const info = state.info.get(doc.id);
+      const ready = doc.format === 'pdf' ? info?.pages : info?.chars != null && info?.starts;
+      if (ready) continue;
+      let blob = await getFile(doc.fileHash);
+      if (!blob) {
+        if (!fetchFile || !doc.fileSize || doc.fileSize > maxFile || doc.fileSize > budget) continue;
+        try { blob = await fetchFile(doc); } catch { blob = null; }
+        if (!blob) continue;
+        budget -= blob.size;
+      }
+      try {
+        if (doc.format === 'pdf') {
+          const pi = await pdfInfo(blob);
+          await saveInfo({ ...(state.info.get(doc.id) || {}), docId: doc.id, format: 'pdf', pages: pi.pages, cover: pi.cover, chars: 0 });
+        } else {
+          await loadBook(doc, {});
+        }
+      } catch (e) {
+        console.warn('미리 준비 실패', doc.title, e);
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  } finally {
+    preparing = false;
+  }
+}

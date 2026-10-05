@@ -1285,7 +1285,11 @@ class Reader {
       () => document.removeEventListener('visibilitychange', onVis),
       () => window.removeEventListener('resize', onResize),
       on('anns', (d) => { if (!d || d.docId === this.doc.id) this.refreshAnns(); }),
-      on('remote-applied', () => this.refreshAnns()),
+      on('remote-applied', () => {
+        // 다른 기기에서 이 문서를 지웠으면 닫는다
+        if (state.docs.get(this.doc.id)?.deleted) { toast('다른 기기에서 이 문서를 서재에서 지웠습니다.'); history.back(); return; }
+        this.refreshAnns();
+      }),
     );
   }
 

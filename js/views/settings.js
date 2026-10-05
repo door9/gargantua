@@ -3,7 +3,7 @@ import { h, esc, fmtDateTime, fmtBytes, fmtRelative, toast, downloadBlob, pickFi
 import { ico } from '../icons.js';
 import { state, setApp, liveDocs, localFileHashes } from '../store.js';
 import { sheet, confirmDialog, infoButton, menu } from '../ui/overlay.js';
-import { navigate, requestPersist, APP_VERSION } from '../main.js';
+import { navigate, requestPersist, APP_VERSION, BUILD } from '../main.js';
 import * as dbx from '../sync/dropbox.js';
 import { syncNow, syncStatus, onSyncStatus, disconnectDropbox, downloadAll, lastSync } from '../sync/sync.js';
 import { exportBackup, importBackupBlob, androidRemoteInfo, importAndroidFromDropbox } from '../sync/backup.js';
@@ -67,7 +67,7 @@ async function fill() {
     row('독서 기록', '읽은 시간·연속 일수', h('button', { class: 'gbtn small', onclick: () => navigate('#/stats') }, '보기'))));
 
   body.append(section('앱 정보', null,
-    row('Gargantua', `웹 앱 ${APP_VERSION} · BEYOND THE EVENT HORIZON`),
+    row('Gargantua', `웹 앱 ${APP_VERSION} (${BUILD}) · BEYOND THE EVENT HORIZON`),
     row('개인정보', '광고·추적 없음', infoButtonWide('<p>문서와 독서 기록은 이 기기 안에서만 처리됩니다. 개발자 서버는 없습니다.</p><p>Dropbox를 연결하면 문서 원본과 기록이 <b>본인의 Dropbox 앱 전용 폴더</b>(Apps/Gargantua Door 9 Labs)로만 전송됩니다. 연결 해제는 이 기기의 연결 정보만 지웁니다.</p><p>"찾아보기"를 누르면 고른 낱말이 해당 사전·검색 사이트로 전달됩니다.</p>')),
     row('사용한 공개 부품', 'pdf.js · fflate · DOMPurify · marked', infoButtonWide('<p>pdf.js (Apache-2.0), fflate (MIT), DOMPurify (Apache-2.0/MPL-2.0), marked (MIT). 사용 허가 문서는 앱 안 vendor/licenses 폴더에 함께 있습니다.</p>'))));
 }
