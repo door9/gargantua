@@ -39,11 +39,11 @@ async function fill() {
   await paintSync();
 
   body.append(section('안드로이드 앱에서 옮겨 오기', '안드로이드 Gargantua 앱의 서재(문서·하이라이트·메모·책갈피·읽던 위치)를 그대로 가져옵니다. 여러 번 가져와도 겹치지 않습니다. 원본 안드로이드 앱의 자료는 건드리지 않습니다.',
-    row('안드로이드 서재 가져오기', 'Dropbox 백업 또는 백업 파일에서', h('button', { class: 'gbtn small', onclick: () => showAndroidImport() }, '가져오기'))));
+    row('안드로이드 서재 가져오기', null, h('button', { class: 'gbtn small', onclick: () => showAndroidImport() }, '가져오기'))));
 
   body.append(section('백업 파일', '서재 전체(원본 파일 포함)를 zip 파일 하나로 저장하거나, 그 파일에서 되살립니다. 되살릴 때는 지금 서재와 합쳐집니다(지우지 않음).',
-    row('백업 파일 만들기', `문서 ${liveDocs().length}개와 모든 기록`, h('button', { class: 'gbtn small', onclick: () => doExport() }, '만들기')),
-    row('백업 파일에서 가져오기', 'Gargantua 웹·안드로이드 백업 모두', h('button', { class: 'gbtn small', onclick: () => doImport() }, '파일 선택'))));
+    row('백업 파일 만들기', `문서 ${liveDocs().length}개`, h('button', { class: 'gbtn small', onclick: () => doExport() }, '만들기')),
+    row('백업 파일에서 가져오기', null, h('button', { class: 'gbtn small', onclick: () => doImport() }, '파일 선택'))));
 
   const themeSeg = h('div', { class: 'seg' });
   for (const [k, label] of [['system', '시스템'], ['light', '밝게'], ['dark', '어둡게']]) {
@@ -52,9 +52,9 @@ async function fill() {
   const autoSync = h('input', { type: 'checkbox', class: 'switch', 'aria-label': '자동 동기화' });
   autoSync.checked = state.app.autoSync !== false;
   autoSync.addEventListener('change', () => setApp({ autoSync: autoSync.checked }));
-  body.append(section('화면·동작', null,
-    row('앱 화면', '서재·노트 화면의 밝기(읽기 화면 색은 읽기 설정에서)', themeSeg),
-    row('바꿀 때마다 자동 동기화', '끄면 앱을 열 때·나갈 때만', autoSync),
+  body.append(section('화면·동작', '<p><b>앱 화면</b>: 서재·노트 화면의 밝기입니다. 읽기 화면의 색(종이·세피아·야간)은 읽기 설정에서 고릅니다.</p><p><b>자동 동기화</b>를 끄면 앱을 열 때와 나갈 때만 Dropbox와 맞춥니다.</p>',
+    row('앱 화면', null, themeSeg),
+    row('바꿀 때마다 자동 동기화', null, autoSync),
     row('하루 되새길 문장', `${state.app.reviewDaily || 10}개`, h('button', { class: 'gbtn small', onclick: (e) => menu(e.currentTarget, [5, 10, 20, 30, 50].map((n) => ({ label: `${n}개`, checked: (state.app.reviewDaily || 10) === n, onClick: () => { setApp({ reviewDaily: n }); fill(); } }))) }, '바꾸기'))));
 
   const storageRow = row('사용 중', '확인 중…');
@@ -63,13 +63,13 @@ async function fill() {
   paintStorage(storageRow, persistRow);
 
   body.append(section('도움말', null,
-    row('키보드 단축키', 'PC에서 읽을 때', infoButtonWide(shortcutsHtml())),
-    row('독서 기록', '읽은 시간·연속 일수', h('button', { class: 'gbtn small', onclick: () => navigate('#/stats') }, '보기'))));
+    row('키보드 단축키', null, infoButtonWide(shortcutsHtml())),
+    row('독서 기록', null, h('button', { class: 'gbtn small', onclick: () => navigate('#/stats') }, '보기'))));
 
   body.append(section('앱 정보', null,
     row('Gargantua', `웹 앱 ${APP_VERSION} (${BUILD}) · BEYOND THE EVENT HORIZON`),
-    row('개인정보', '광고·추적 없음', infoButtonWide('<p>문서와 독서 기록은 이 기기 안에서만 처리됩니다. 개발자 서버는 없습니다.</p><p>Dropbox를 연결하면 문서 원본과 기록이 <b>본인의 Dropbox 앱 전용 폴더</b>(Apps/Gargantua Door 9 Labs)로만 전송됩니다. 연결 해제는 이 기기의 연결 정보만 지웁니다.</p><p>"찾아보기"를 누르면 고른 낱말이 해당 사전·검색 사이트로 전달됩니다.</p>')),
-    row('사용한 공개 부품', 'pdf.js · fflate · DOMPurify · marked', infoButtonWide('<p>pdf.js (Apache-2.0), fflate (MIT), DOMPurify (Apache-2.0/MPL-2.0), marked (MIT). 사용 허가 문서는 앱 안 vendor/licenses 폴더에 함께 있습니다.</p>'))));
+    row('개인정보', null, infoButtonWide('<p>문서와 독서 기록은 이 기기 안에서만 처리됩니다. 개발자 서버는 없습니다.</p><p>Dropbox를 연결하면 문서 원본과 기록이 <b>본인의 Dropbox 앱 전용 폴더</b>(Apps/Gargantua Door 9 Labs)로만 전송됩니다. 연결 해제는 이 기기의 연결 정보만 지웁니다.</p><p>"찾아보기"를 누르면 고른 낱말이 해당 사전·검색 사이트로 전달됩니다.</p>')),
+    row('사용한 공개 부품', null, infoButtonWide('<p>pdf.js (Apache-2.0), fflate (MIT), DOMPurify (Apache-2.0/MPL-2.0), marked (MIT). 사용 허가 문서는 앱 안 vendor/licenses 폴더에 함께 있습니다.</p>'))));
 }
 
 function infoButtonWide(html) {
@@ -93,7 +93,7 @@ async function paintStorage(storageRow, persistRow) {
       storageRow.querySelector('.l').replaceChildren(h('b', null, '사용 중'), sub, bar);
     }
     const persisted = await navigator.storage?.persisted?.();
-    persistRow.querySelector('.l small').textContent = persisted ? '켜짐 — 브라우저가 임의로 지우지 않습니다' : '꺼짐';
+    persistRow.querySelector('.l small').textContent = persisted ? '켜짐' : '꺼짐';
     if (!persisted) {
       persistRow.append(h('div', { class: 'acts' }, h('button', { class: 'gbtn small', onclick: async () => {
         await requestPersist();
@@ -111,7 +111,7 @@ async function paintSync() {
   const connected = await dbx.isConnected();
   box.textContent = '';
   if (!connected) {
-    box.append(row('연결 안 됨', '연결하면 자동 백업·기기 간 동기화가 시작됩니다', h('button', { class: 'gbtn primary small', onclick: () => connectFlow() }, h('span', { html: ico('cloud') }), '연결')));
+    box.append(row('연결 안 됨', null, h('button', { class: 'gbtn primary small', onclick: () => connectFlow() }, h('span', { html: ico('cloud') }), '연결')));
     return;
   }
   const acc = await dbx.accountInfo();
@@ -127,7 +127,7 @@ async function paintSync() {
   const local = await localFileHashes(true);
   const missing = liveDocs().filter((d) => !local.has(d.fileHash));
   if (missing.length) {
-    box.append(row('원본이 아직 없는 문서', `${missing.length}개 — 열 때 받아 옵니다`, h('button', { class: 'gbtn small', onclick: (e) => fetchAll(e.currentTarget) }, h('span', { html: ico('download') }), '모두 받기')));
+    box.append(row('원본이 아직 없는 문서', `${missing.length}개`, h('button', { class: 'gbtn small', onclick: (e) => fetchAll(e.currentTarget) }, h('span', { html: ico('download') }), '모두 받기')));
   }
   box.append(row('연결 해제', acc?.email || '', h('button', { class: 'gbtn small ghost', onclick: async () => {
     const ok = await confirmDialog({ title: 'Dropbox 연결을 끊을까요?', message: '<p>이 기기의 연결 정보만 지웁니다. Dropbox에 있는 백업과 이 기기의 서재는 그대로입니다.</p>', ok: '연결 해제' });

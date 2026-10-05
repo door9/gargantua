@@ -5,7 +5,7 @@ import { state, allLiveAnns, saveAnn, removeAnn, restoreAnn, saveRev } from '../
 import { menu, infoButton } from '../ui/overlay.js';
 import { openDoc } from '../main.js';
 import { coverEl } from './library.js';
-import { noteEditor, citeText, tagsOf, noteHtml } from '../reader/actions.js';
+import { noteEditor, citeText, tagsOf, noteHtml, shareQuoteCard } from '../reader/actions.js';
 import { exportNotesMarkdown } from './notes-export.js';
 
 const COLOR_NAMES = ['노랑', '민트', '분홍', '파랑'];
@@ -148,6 +148,7 @@ function cardMenu(anchor, a) {
       const doc = state.docs.get(a.docId);
       if (await copyText(citeText(doc, a, annWhere(a)))) toast('복사했습니다.', { duration: 1200 });
     } },
+    { label: '문장 카드 이미지', icon: 'sparkle', onClick: () => shareQuoteCard(state.docs.get(a.docId), a, annWhere(a)) },
     { label: rev?.retired ? '되새기기에 다시 넣기' : '되새기기에서 빼기', icon: 'review', onClick: () => saveRev(a.id, { retired: !rev?.retired }) },
     { label: '삭제', icon: 'trash', danger: true, onClick: async () => {
       const snap = { ...a };

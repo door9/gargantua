@@ -310,7 +310,7 @@ export function showSettings(r) {
         seg('한글 줄바꿈', 'keepAll', [[false, '글자 단위'], [true, '낱말 단위']]),
         toggle('영어 낱말 하이픈', 'hyphens'),
         h('div', { class: 'rset-sub' }, '전자책 보기'),
-        toggle('책 원래 서식', 'bookStyle', r.doc.format === 'epub' ? '책에 든 글꼴·간격·장식' : ''),
+        toggle('책 원래 서식', 'bookStyle'),
         seg('두 쪽 펼침', 'spread', [['auto', '자동'], ['on', '항상'], ['off', '안 함']]),
         toggle('쪽 넘김 움직임', 'pageAnim'),
       );

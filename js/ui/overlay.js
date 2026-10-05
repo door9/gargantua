@@ -102,7 +102,7 @@ export function sheet({ title = '', body, actions = [], wide = false, tall = fal
   if (foot) panel.append(foot);
   const wrap = h('div', { class: 'gov-wrap' }, backdrop, panel);
   document.body.append(wrap);
-  requestAnimationFrame(() => wrap.classList.add('open'));
+  setTimeout(() => wrap.classList.add('open'), 16);
   backdrop.addEventListener('click', () => close());
   let closed = false;
   const entry = { close: (opts) => close(opts) };
@@ -176,7 +176,7 @@ export function menu(anchor, items, { align = 'right', title = '' } = {}) {
   if (top + mh > innerHeight - 8) top = Math.max(8, r.top - mh - 4);
   list.style.left = `${left}px`;
   list.style.top = `${top}px`;
-  requestAnimationFrame(() => wrap.classList.add('open'));
+  setTimeout(() => wrap.classList.add('open'), 16);
   let closed = false;
   const entry = { close: (o) => close(o) };
   function close({ fromHistory = false } = {}) {
@@ -265,7 +265,7 @@ export function popover(anchor, content, { className = '' } = {}) {
   if (top + box.offsetHeight > innerHeight - 8) top = Math.max(8, r.top - box.offsetHeight - 6);
   box.style.left = `${left}px`;
   box.style.top = `${top}px`;
-  requestAnimationFrame(() => box.classList.add('open'));
+  setTimeout(() => box.classList.add('open'), 16);
   const off = (e) => {
     if (box.contains(e.target) || anchor.contains(e.target)) return;
     closePopovers();

@@ -17,7 +17,7 @@ import { Painter, HL_SUPPORTED } from './painter.js';
 import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from './chapters.js';
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
-import { lookupMenu, citeText, noteEditor, tagsOf } from './actions.js';
+import { lookupMenu, citeText, noteEditor, tagsOf, shareQuoteCard } from './actions.js';
 import { fetchRemoteFile } from '../sync/sync.js';
 
 export const COLORS = [
@@ -58,7 +58,9 @@ class Reader {
     this.painter = new Painter();
     this.find = null;
     this.backStack = [];
-    this.collapsed = true;
+    // 휴대폰은 안드로이드 앱처럼 접힌 채로 시작하고 읽어 내려가면 접는다. 넓은 화면은 펼쳐 둔다
+    this.narrow = innerWidth < 900;
+    this.collapsed = this.narrow;
     this.lastActivity = Date.now();
     this.offs = [];
     this.alive = true;
@@ -146,7 +148,7 @@ class Reader {
   // ── 화면 틀 ──
   buildChrome() {
     const d = this.doc;
-    this.root = h('div', { class: 'rd collapsed', 'data-format': d.format });
+    this.root = h('div', { class: `rd${this.collapsed ? ' collapsed' : ''}`, 'data-format': d.format });
     this.applyTheme();
     this.top = h('header', { class: 'rd-top' });
     this.mini = h('button', { class: 'rd-mini', 'aria-label': '읽기 메뉴 펼치기', html: ico('down'), onclick: () => this.setCollapsed(false) });
@@ -450,7 +452,7 @@ class Reader {
     this.updateFooter();
     this.updateBookmarkBtn();
     if (!initial) this.savePosition(loc, { progress });
-    if (dir === 'down' && !this.collapsed && !this.find && this.view.kind !== 'paged') this.setCollapsed(true);
+    if (dir === 'down' && this.narrow && !this.collapsed && !this.find && this.view.kind !== 'paged') this.setCollapsed(true);
   }
 
   savePosition(loc, { progress, force = false } = {}) {
@@ -882,6 +884,7 @@ class Reader {
         if (await copyText(citeText(this.doc, ann, this.locLabel(ann)))) toast('출처와 함께 복사했습니다.', { duration: 1200 });
       }),
       selBtn('lookup', '찾아보기', (e) => lookupMenu(e.currentTarget, ann.anchor?.quote || '')),
+      selBtn('sparkle', '카드', async () => { closePopovers(); await shareQuoteCard(this.doc, ann, this.locLabel(ann)); }),
       selBtn('trash', '삭제', () => { closePopovers(); this.deleteAnn(ann); }));
     box.append(row);
     popover(anchor, box, { className: 'annpop-wrap' });
@@ -1247,8 +1250,8 @@ class Reader {
   showMenu(anchor) {
     const items = [];
     if (!this.isPdf) {
-      items.push({ label: '줄글 보기', hint: '위아래로 이어 읽기', checked: this.view.kind === 'flow', onClick: () => this.setView('flow') });
-      items.push({ label: '전자책 보기', hint: this.doc.format === 'epub' ? '쪽 넘기기 · 책 원래 모양' : '쪽 넘기기', checked: this.view.kind === 'paged', onClick: () => this.setView('paged') });
+      items.push({ label: '줄글 보기', checked: this.view.kind === 'flow', onClick: () => this.setView('flow') });
+      items.push({ label: '전자책 보기', checked: this.view.kind === 'paged', onClick: () => this.setView('paged') });
       items.push({ divider: true });
       items.push({ label: 'Full · 전체 문서', checked: this.view.kind === 'flow' && this.mode === 'full', onClick: () => this.setMode('full') });
       items.push({ label: 'Random · 무작위', checked: this.view.kind === 'flow' && this.mode === 'random', onClick: () => (this.mode === 'random' ? this.shuffle() : this.setMode('random')) });

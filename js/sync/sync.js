@@ -48,8 +48,12 @@ export async function initSync() {
     setTimeout(() => syncNow({ reason: 'start' }), 1200);
   }
   const soon = debounce(() => syncNow({ reason: 'change' }), 6000);
-  // 읽던 위치만 바뀐 것은 몇 분에 한 번(나갈 때는 바로) — 휴대폰 데이터를 아낀다
-  const posSoon = debounce(() => syncNow({ reason: 'position' }), 180000);
+  // 읽던 위치만 바뀐 것은 3분에 한 번(나갈 때는 바로) — 계속 읽는 중에도 미뤄지기만 하지 않게 첫 변경부터 잰다
+  let posTimer = null;
+  const posSoon = () => {
+    if (posTimer) return;
+    posTimer = setTimeout(() => { posTimer = null; syncNow({ reason: 'position' }); }, 180000);
+  };
   let firstDirtyAt = 0;
   on('dirty', (d) => {
     if (!state.app.autoSync) return;

@@ -1,6 +1,6 @@
 // 전자책 보기 — 쪽 단위로 넘겨 읽기. 책의 원래 CSS를 살리고, 넓은 화면에서는 두 쪽 펼침.
 import { h, debounce, sleep } from '../util.js';
-import { rangeFromOffsets, textIndex } from '../text.js';
+import { rangeFromOffsets, textIndex, visibleRangeAt } from '../text.js';
 import { fragmentFrom } from '../parse/common.js';
 import { applyWindow, windowsFor } from './window.js';
 
@@ -224,8 +224,9 @@ export class PagedView {
     if (!body) return 0;
     const idx = textIndex(body);
     if (!idx.length) return 0;
-    const at = Math.max(0, Math.min(o, idx.length - 1));
-    const range = rangeFromOffsets(body, at, at + 1);
+    const w = this.wins[this.wi];
+    const at = Math.max(w ? w.from : 0, Math.min(o, idx.length - 1));
+    const range = visibleRangeAt(body, at);
     const rect = range && firstRect(range);
     if (!rect) return 0;
     return Math.max(0, Math.min(this.views - 1, this.pageOfRect(rect)));

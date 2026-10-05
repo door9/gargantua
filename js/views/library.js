@@ -112,6 +112,7 @@ async function fill() {
   const scrollY = window.scrollY;
   const prevFocus = document.activeElement?.classList?.contains('lib-search') ? document.activeElement.selectionStart : null;
   box.textContent = '';
+  document.querySelector('.fab')?.toggleAttribute('hidden', !docs.length);
   if (!docs.length) {
     box.append(emptyState());
     return;

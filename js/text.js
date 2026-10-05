@@ -257,3 +257,47 @@ export function sentenceBounds(text, offset) {
   }
   return { start, end: text.length };
 }
+
+// 화면에 상자가 있는 글자 한 칸(문단 사이 줄바꿈처럼 안 보이는 글자면 뒤로, 없으면 앞으로 찾는다)
+export function visibleRangeAt(root, offset, { span = 4000 } = {}) {
+  const idx = textIndex(root);
+  if (!idx.nodes.length) return null;
+  const r = document.createRange();
+  const hasBox = () => {
+    for (const rc of r.getClientRects()) if (rc.width || rc.height) return true;
+    return false;
+  };
+  const tryAt = (o) => {
+    const p = locate(idx, o);
+    if (!p || p.offset >= p.node.data.length) return false;
+    if (/\s/.test(p.node.data[p.offset]) && p.node.data.trim() === '') return false;
+    r.setStart(p.node, p.offset);
+    r.setEnd(p.node, p.offset + 1);
+    return hasBox();
+  };
+  const start = Math.max(0, Math.min(offset, idx.length - 1));
+  // 칸 단위로 건너뛰며 앞쪽(뒤 글자)부터
+  let i = indexOfOffset(idx, start);
+  let o = start;
+  for (let n = 0; i < idx.nodes.length && o - start <= span; n++) {
+    const node = idx.nodes[i];
+    const end = idx.starts[i] + node.data.length;
+    if (node.data.trim()) {
+      for (let k = o; k < end && k - start <= span; k++) if (tryAt(k)) return r;
+    }
+    i++;
+    o = idx.starts[i] ?? idx.length;
+  }
+  for (let k = start - 1; k >= Math.max(0, start - span); k--) if (tryAt(k)) return r;
+  return null;
+}
+
+function indexOfOffset(idx, offset) {
+  let lo = 0;
+  let hi = idx.nodes.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (idx.starts[mid] <= offset) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}

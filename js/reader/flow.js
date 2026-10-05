@@ -1,6 +1,6 @@
 // 줄글 보기 — 위아래로 이어 읽기(안드로이드 앱과 같은 방식). 전체·장별·무작위 모두 여기서 그린다.
 import { h, throttle, sleep } from '../util.js';
-import { rangeFromOffsets, offsetOfBoundary, caretFromPoint, textIndex } from '../text.js';
+import { rangeFromOffsets, offsetOfBoundary, caretFromPoint, textIndex, visibleRangeAt } from '../text.js';
 import { fragmentFrom } from '../parse/common.js';
 import { fromGlobal } from './chapters.js';
 import { applyWindow } from './window.js';
@@ -153,7 +153,7 @@ export class FlowView {
     if (!body) return false;
     const idx = textIndex(body);
     const o = Math.max(0, Math.min(loc.o, idx.length));
-    const range = idx.length ? rangeFromOffsets(body, o >= idx.length ? Math.max(0, o - 1) : o, o >= idx.length ? o : o + 1) : null;
+    const range = idx.length ? visibleRangeAt(body, o >= idx.length ? Math.max(0, o - 1) : o) : null;
     const place = (behavior) => {
       let rect = range ? range.getBoundingClientRect() : null;
       if (!rect || (!rect.width && !rect.height)) rect = body.parentElement.getBoundingClientRect();
