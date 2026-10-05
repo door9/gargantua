@@ -81,7 +81,7 @@ class Reader {
       if (this.isPdf) await this.loadPdf(); else await this.loadText();
       if (!this.alive) return;
       await this.mountView(this.initialView(), { loc: this.initialLoc(), fresh: true });
-      savePos(this.doc.id, { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') });
+      this.pos = savePos(this.doc.id, { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') });
       saveDoc({ id: this.doc.id, lastOpenedAt: now() }, { silent: true }).catch(() => {});
       this.setLoading(null);
       this.startTimers();
@@ -260,7 +260,8 @@ class Reader {
       this.view.render(null);
       await this.view.goTo(loc || { s: 0, o: 0 });
     } else {
-      if (this.mode === 'random' && (fresh || this.chapterIndex == null)) {
+      const explicit = this.opts.loc || this.opts.annId;
+      if (this.mode === 'random' && !explicit && (fresh || this.chapterIndex == null)) {
         this.chapterIndex = randomChapter(this.chapters, fresh ? -1 : this.chapterIndex);
         loc = fromGlobal(this.book, this.chapters[this.chapterIndex].start);
       } else {
@@ -283,14 +284,14 @@ class Reader {
     await sleep(10);
     await this.mountView(kind, { loc, fresh: false });
     this.setLoading(null);
-    savePos(this.doc.id, { view: kind });
+    this.pos = savePos(this.doc.id, { view: kind });
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
   }
 
   async setMode(mode) {
     if (this.isPdf) {
       this.mode = mode;
-      savePos(this.doc.id, { mode });
+      this.pos = savePos(this.doc.id, { mode });
       if (mode === 'random') await this.pdfRandom({});
       this.updateChapBar();
       return;
@@ -300,7 +301,7 @@ class Reader {
     const loc = this.view.currentLoc();
     const prevMode = this.mode;
     this.mode = mode;
-    savePos(this.doc.id, { mode });
+    this.pos = savePos(this.doc.id, { mode });
     await this.renderFlowMode(loc, { fresh: mode === 'random' && prevMode !== 'random' });
     if (mode === 'random' && prevMode === 'random') {
       // 무작위 → 다른 장
@@ -311,8 +312,8 @@ class Reader {
     if (this.isPdf) return this.pdfRandom({});
     if (this.view.kind !== 'flow' || this.mode !== 'random') {
       this.mode = 'random';
-      savePos(this.doc.id, { mode: 'random' });
-      if (this.view.kind !== 'flow') { await this.setView('flow'); return; }
+      this.pos = savePos(this.doc.id, { mode: 'random' });
+      if (this.view.kind !== 'flow') await this.setView('flow');
     }
     this.chapterIndex = randomChapter(this.chapters, this.chapterIndex ?? -1);
     const ch = this.chapters[this.chapterIndex];
@@ -543,10 +544,12 @@ class Reader {
     const cached = this.resolved.get(ann.id);
     if (cached && cached.v === ann.updatedAt) return cached.r;
     let r = null;
+    let unknown = false;
     const a = ann.anchor;
     if (a) {
       const u0 = this.unitOf(ann);
       const t0 = u0 != null ? this.unitText(u0) : null;
+      if (t0 == null && this.isPdf) unknown = true;
       if (t0 != null) {
         const m = resolveAnchor(t0, a);
         if (m) r = { u: u0, ...m };
@@ -560,7 +563,7 @@ class Reader {
         }
       }
     }
-    this.resolved.set(ann.id, { v: ann.updatedAt, r });
+    if (!unknown) this.resolved.set(ann.id, { v: ann.updatedAt, r });
     if (r && a && (a.legacy || a.s !== r.u) && !this.isPdf) {
       // 옛 위치 정보(안드로이드에서 옮겨 온 것 등)를 지금 위치로 고쳐 둔다
       const root = this.view?.roots.get(r.u);
@@ -616,6 +619,7 @@ class Reader {
     for (const u of this.view?.roots?.keys() || []) this.paintUnit(u);
     this.updateBookmarkBtn();
     if (this.side && !this.side.hidden) panels.renderSide(this);
+    for (const fn of this.sheetRefreshers || []) { try { fn(); } catch { /* 닫히는 중 */ } }
   }
 
   flash(range) {
@@ -691,7 +695,8 @@ class Reader {
     const quote = textOf(info.root).slice(info.start, info.end);
     this.clearSelection();
     const existing = overlaps.find((o) => o.ann.note);
-    const body = await noteEditor({ quote, value: existing?.ann.note || '' });
+    const prefill = overlaps.map((o) => o.ann.note).filter(Boolean).join('\n\n');
+    const body = await noteEditor({ quote, value: prefill });
     if (body == null) return;
     const ann = await this.highlightSelection(existing?.ann.color ?? overlaps[0]?.ann.color ?? 0, { info });
     if (ann) {
@@ -1015,7 +1020,7 @@ class Reader {
       const g = toGlobal(this.book, loc.s, loc.o);
       if (divided && this.mode === 'full' && this.chapters.length > 1) {
         this.mode = 'divided';
-        savePos(this.doc.id, { mode: 'divided' });
+        this.pos = savePos(this.doc.id, { mode: 'divided' });
       }
       if (this.mode !== 'full') {
         const ci = chapterAt(this.chapters, g);
@@ -1274,17 +1279,24 @@ class Reader {
   }
 
   applySettings(patch) {
+    // 글자 크기 등이 바뀌기 전에 지금 자리를 잡아 둔다(바뀐 뒤 재면 다른 자리가 된다)
+    if (this.view && !this.isPdf && !this.pendingLoc) this.pendingLoc = this.view.kind === 'paged' ? (this.view.anchorLoc || this.view.currentLoc()) : this.view.currentLoc();
     setReader(patch);
     kvSet('readerTouched', true).catch(() => {});
     this.settings = state.reader;
     this.applyTheme();
     if (this.view) {
       if ('bookStyle' in patch && this.view.kind === 'paged') {
-        const loc = this.view.currentLoc();
+        const loc = this.pendingLoc || this.view.currentLoc();
+        this.pendingLoc = null;
         this.view.showSection(loc.s, { o: loc.o });
       } else {
         clearTimeout(this.relayoutTimer);
-        this.relayoutTimer = setTimeout(() => this.view?.relayout?.(), 120);
+        this.relayoutTimer = setTimeout(() => {
+          const loc = this.pendingLoc;
+          this.pendingLoc = null;
+          this.view?.relayout?.(loc);
+        }, 120);
       }
     }
   }

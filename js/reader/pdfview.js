@@ -104,20 +104,29 @@ export class PdfView {
   }
 
   onIntersect(entries) {
+    this.near = this.near || new Set();
     for (const e of entries) {
       const i = Number(e.target.dataset.p);
-      if (e.isIntersecting) this.renderPage(i);
+      if (e.isIntersecting) { this.near.add(i); this.renderPage(i); } else this.near.delete(i);
     }
-    // 멀리 벗어난 쪽은 메모리를 위해 지운다
+    this.evictFar();
+  }
+
+  // 화면 근처(관찰 범위 안)가 아닌 쪽 중 멀리 떨어진 것만 메모리를 위해 지운다
+  evictFar() {
     const cur = this.lastLoc?.p ?? 0;
     for (let i = 0; i < this.pages.length; i++) {
-      if (Math.abs(i - cur) > 8 && this.pages[i].state !== 'empty') this.unrender(i);
+      if (this.pages[i].state === 'empty' || this.near?.has(i)) continue;
+      if (Math.abs(i - cur) > 12) this.unrender(i);
     }
   }
 
   renderVisible() {
     const box = this.el.getBoundingClientRect();
-    for (let i = 0; i < this.pages.length; i++) {
+    const cur = this.lastLoc?.p ?? 0;
+    const from = Math.max(0, cur - 15);
+    const to = Math.min(this.pages.length - 1, cur + 15);
+    for (let i = from; i <= to; i++) {
       const r = this.pages[i].div.getBoundingClientRect();
       if (r.bottom > box.top - 1400 && r.top < box.bottom + 1400) this.renderPage(i);
     }
@@ -197,6 +206,7 @@ export class PdfView {
     this.lastTop = top;
     const loc = this.currentLoc();
     if (loc) this.r.onLocate(loc, { dir, atEnd: top + this.el.clientHeight >= this.el.scrollHeight - 4 });
+    this.renderVisible();
   }
 
   currentLoc() {

@@ -221,11 +221,13 @@ function tile(d, local) {
   if (!local.has(d.fileHash)) cv.append(h('span', { class: 'cloud-chip', html: ico('cloudDown') }));
   const el = h('div', { class: 'doc-tile', role: 'button', tabindex: '0', onclick: () => openDoc(d.id), onkeydown: (e) => { if (e.key === 'Enter') openDoc(d.id); } },
     cv, h('div', { class: 'doc-title' }, d.title), pbar(d));
-  el.addEventListener('contextmenu', (e) => { e.preventDefault(); docMenu(el, d); });
   let t = null;
-  el.addEventListener('pointerdown', () => { t = setTimeout(() => { t = null; docMenu(el, d); }, 600); });
-  el.addEventListener('pointerup', () => clearTimeout(t));
-  el.addEventListener('pointerleave', () => clearTimeout(t));
+  let menuAt = 0;
+  const open = () => { if (Date.now() - menuAt < 800) return; menuAt = Date.now(); docMenu(el, d); };
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(t); open(); });
+  el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') return; t = setTimeout(() => { t = null; open(); }, 650); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'pointermove']) el.addEventListener(ev, () => clearTimeout(t));
+  el.addEventListener('click', (e) => { if (Date.now() - menuAt < 800) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   return el;
 }
 

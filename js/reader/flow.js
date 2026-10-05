@@ -187,8 +187,8 @@ export class FlowView {
     this.el.scrollTo({ top: this.el.scrollTop + rect.top - box.top - box.height * 0.3, behavior: 'smooth' });
   }
 
-  relayout() {
-    const loc = this.currentLoc();
+  relayout(given = null) {
+    const loc = given || this.currentLoc();
     const est = this.estimator();
     for (const [s, body] of this.roots) {
       const sec = this.book.sections[s];

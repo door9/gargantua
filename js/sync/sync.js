@@ -168,11 +168,12 @@ async function doSync({ reason = '', force = false } = {}) {
         throw e;
       }
     }
-    await uploadMissingFiles();
-    await dailySnapshot();
+    const fileProblem = await uploadMissingFiles();
+    try { await dailySnapshot(); } catch (e) { console.warn('날짜별 사본 실패', e); }
     lastSyncAt = Date.now();
     await kvSet('lastSyncAt', lastSyncAt);
-    setStatus({ state: 'idle', label: '동기화됨', lastSync: lastSyncAt, error: '' });
+    if (fileProblem) setStatus({ state: 'error', label: `원본 ${fileProblem.failed}개를 올리지 못함`, lastSync: lastSyncAt, error: fileProblem.error });
+    else setStatus({ state: 'idle', label: '동기화됨', lastSync: lastSyncAt, error: '' });
     emit('sync-done', { uploaded, reason });
     setTimeout(() => prepareMissing({ fetchFile: (d) => fetchRemoteFile(d) }).catch(() => {}), 1500);
   } catch (e) {
@@ -254,17 +255,18 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
   if (data.stats && !data.stats[state.deviceId] && state.stats[state.deviceId]) needUpload = true;
   await kvSet('stats', state.stats);
 
-  if (putDocs.length) await db.putMany('docs', putDocs);
-  if (putPos.length) await db.putMany('pos', putPos);
+  // 기다리는 사이 이 기기에서 고친 것이 있으면 그 최신본을 쓴다
+  if (putDocs.length) await db.putMany('docs', putDocs.map((r) => state.docs.get(r.id) || r));
+  if (putPos.length) await db.putMany('pos', putPos.map((r) => state.pos.get(r.docId) || r));
   if (putAnns.length) {
-    await db.putMany('anns', putAnns);
+    await db.putMany('anns', putAnns.map((r) => state.anns.get(r.id) || r));
     for (const a of putAnns) {
       let set = state.annsByDoc.get(a.docId);
       if (!set) state.annsByDoc.set(a.docId, (set = new Set()));
       set.add(a.id);
     }
   }
-  if (putRev.length) await db.putMany('rev', putRev);
+  if (putRev.length) await db.putMany('rev', putRev.map((r) => state.rev.get(r.annId) || r));
   for (const d of removedDocs) {
     await db.del('cache', d.id);
     await db.del('info', d.id);
@@ -307,6 +309,8 @@ async function uploadMissingFiles() {
     todo.push(d);
   }
   let i = 0;
+  let failed = 0;
+  let lastError = null;
   for (const d of todo) {
     i++;
     setStatus({ state: 'busy', label: `원본 올리는 중 ${i}/${todo.length}` });
@@ -314,11 +318,15 @@ async function uploadMissingFiles() {
     if (!blob) continue;
     try {
       await dbx.upload(remoteName(d), blob, { mode: 'add' });
+      have.add(`${d.fileHash}.${d.format}`);
     } catch (e) {
-      if (!(e instanceof dbx.DbxError && e.conflict)) throw e;
+      if (e instanceof dbx.DbxError && e.conflict) { have.add(`${d.fileHash}.${d.format}`); continue; }
+      if (e instanceof dbx.DbxError && (e.auth || e.status === 0)) throw e;
+      failed++;
+      lastError = e;
     }
-    have.add(`${d.fileHash}.${d.format}`);
   }
+  return failed ? { failed, error: /insufficient_space/.test(lastError?.summary || '') ? 'Dropbox 공간이 부족합니다' : (lastError?.message || '') } : null;
 }
 
 async function dailySnapshot() {

@@ -163,10 +163,10 @@ export function showAnnotations(r) {
   };
   const exportBtn = h('button', { class: 'gicon', 'aria-label': '내보내기', title: '이 문서 노트 내보내기', html: ico('upload') });
   exportBtn.addEventListener('click', () => exportDocNotes(r, exportBtn));
-  s = sheet({ title: '하이라이트 · 메모', body: h('div', null, chips, holder), tall: true, headerExtra: exportBtn });
+  r.sheetRefreshers = r.sheetRefreshers || new Set();
+  r.sheetRefreshers.add(render);
+  s = sheet({ title: '하이라이트 · 메모', body: h('div', null, chips, holder), tall: true, headerExtra: exportBtn, onClose: () => r.sheetRefreshers.delete(render) });
   render();
-  const off = () => render();
-  r.annSheetRefresh = off;
 }
 
 function exportDocNotes(r, anchor) {
@@ -203,7 +203,9 @@ export function showBookmarks(r) {
   let s;
   const body = h('div');
   const render = () => body.replaceChildren(bookmarkList(r, { onPick: () => s.close() }));
-  s = sheet({ title: '책갈피', body, tall: true });
+  r.sheetRefreshers = r.sheetRefreshers || new Set();
+  r.sheetRefreshers.add(render);
+  s = sheet({ title: '책갈피', body, tall: true, onClose: () => r.sheetRefreshers.delete(render) });
   render();
 }
 

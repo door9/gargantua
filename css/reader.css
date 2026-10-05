@@ -275,3 +275,6 @@
 .annpop-rel-i:hover { background: rgba(255, 255, 255, .08); }
 .annpop-rel-i span { font-size: 13px; }
 .annpop-rel-i small { font-size: 11px; opacity: .65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 좁아지면 옆 창은 숨긴다(닫을 단추도 숨겨지므로) */
+@media (max-width: 1099px) { .rd-side { display: none !important; } }

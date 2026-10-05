@@ -109,15 +109,17 @@ export class PagedView {
     // 아주 긴 장은 몇 덩어리로 나눠 넘긴다
     this.wins = windowsFor(body, WINDOW_LIMIT);
     if (!keepWindow) {
-      if (o != null) this.wi = Math.max(0, this.wins.findIndex((w) => o >= w.from && o < w.to));
-      else this.wi = atEnd ? this.wins.length - 1 : 0;
-      if (this.wi < 0) this.wi = this.wins.length - 1;
+      if (o != null) {
+        const wi = this.wins.findIndex((w) => o >= w.from && o < w.to);
+        this.wi = wi < 0 ? this.wins.length - 1 : wi;
+      } else this.wi = atEnd ? this.wins.length - 1 : 0;
     }
     this.applyWin();
     this.r.unitsRendered([s]);
     this.layout();
     if (o != null) this.page = this.pageOfOffset(o);
     else this.page = atEnd ? this.views - 1 : 0;
+    this.anchorLoc = o != null ? { s, o } : null;
     this.setPage(this.page, { instant: true });
     // 글꼴·그림이 늦게 오면 다시 잰다
     if (document.fonts?.status !== 'loaded') document.fonts.ready.then(() => this.relayout());
@@ -154,12 +156,21 @@ export class PagedView {
     if (this.page >= this.views) this.page = this.views - 1;
   }
 
-  relayout() {
+  // loc: 바뀌기 전 위치(없으면 마지막으로 읽던 자리). 배치가 바뀐 뒤에 재면 엉뚱한 자리가 나온다
+  relayout(loc = null) {
     if (this.s < 0) return;
-    const loc = this.currentLoc();
+    const target = loc || this.anchorLoc || this.currentLoc();
     this.layout();
-    if (loc && loc.s === this.s) this.page = this.pageOfOffset(loc.o);
+    if (target && target.s === this.s) {
+      const w = this.wins[this.wi];
+      if (w && this.wins.length > 1 && (target.o < w.from || target.o >= w.to)) {
+        const wi = this.wins.findIndex((x) => target.o >= x.from && target.o < x.to);
+        if (wi >= 0) { this.wi = wi; this.applyWin(); this.layout(); }
+      }
+      this.page = this.pageOfOffset(target.o);
+    }
     this.setPage(this.page, { instant: true, silent: true });
+    if (target) this.anchorLoc = target;
   }
 
   setPage(p, { instant = false, silent = false } = {}) {
@@ -170,7 +181,7 @@ export class PagedView {
     if (!silent) {
       const after = () => {
         const loc = this.currentLoc();
-        if (loc) this.r.onLocate(loc, { atEnd: this.isLastPage() });
+        if (loc) { this.anchorLoc = loc; this.r.onLocate(loc, { atEnd: this.isLastPage() }); }
       };
       if (!instant && this.r.settings.pageAnim) setTimeout(after, 240); else setTimeout(after, 0);
     }
@@ -292,6 +303,7 @@ export class PagedView {
     }
     await sleep(0);
     this.lastLoc = { s: loc.s, o: loc.o };
+    this.anchorLoc = { s: loc.s, o: loc.o };
     return true;
   }
 

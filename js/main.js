@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '1c93afc1d1';
+export const BUILD = '8fc1cf9036';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -214,9 +214,10 @@ function registerSW() {
   }).catch((e) => console.warn('서비스워커 등록 실패', e));
   let reloading = false;
   // 처음 설치될 때(이전 관리자가 없을 때)는 다시 읽을 필요가 없다
-  const hadController = !!navigator.serviceWorker.controller;
+  let hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading || !hadController) return;
+    if (!hadController) { hadController = true; return; }
+    if (reloading) return;
     // 읽는 중이면 위치를 저장한 뒤 다시 연다
     const r = currentReader();
     const go = () => { reloading = true; location.reload(); };

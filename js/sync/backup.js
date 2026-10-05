@@ -151,6 +151,9 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
   const hash = await sha256Hex(blob);
   const existing = liveDocs().find((x) => x.fileHash === hash);
   const id = existing?.id || `a-${d.id}`;
+  // 이 기기에서 지웠던 문서를 다시 가져오면 되살린다(그 문서의 하이라이트도 함께)
+  const wasDeleted = !existing && !!state.docs.get(id)?.deleted;
+  const skipAnn = (annId) => !wasDeleted && !!state.anns.get(annId)?.deleted;
   const addedAt = Date.parse(d.addedAt) || now();
   if (!existing) {
     await importOne(blob, fileName, { id, addedAt, title: d.title, onStatus });
@@ -180,7 +183,7 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
   const existingAnns = new Set(liveAnns(id).map((a) => a.id));
   (d.bookmarks || []).forEach((f, k) => {
     const annId = `a-${d.id}-bm-${k}`;
-    if (existingAnns.has(annId)) return;
+    if (existingAnns.has(annId) || skipAnn(annId)) return;
     let anchor;
     let snippet = '';
     if (isPdf) {
@@ -191,7 +194,7 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
       anchor = { s: loc.s, o: loc.o };
       snippet = (texts?.[loc.s] || '').slice(loc.o, loc.o + 80).replace(/\s+/g, ' ').trim();
     } else return;
-    saveAnn({ id: annId, docId: id, kind: 'bm', anchor, snippet, progress: f, createdAt: opened || now() }, { silent: true });
+    saveAnn({ id: annId, docId: id, kind: 'bm', anchor, snippet, progress: f, createdAt: opened || now(), deleted: false }, { silent: true });
     report.bookmarks++;
   });
 
@@ -225,8 +228,8 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
     if (anchor.legacy) report.orphans++;
     const created = Date.parse(hl.createdAt) || now();
     hlByAndroid.set(hl.id, { annId, blockIndex: hl.blockIndex, start: hl.start, end: hl.end, anchor });
-    if (existingAnns.has(annId)) continue;
-    await saveAnn({ id: annId, docId: id, kind: 'hl', color: COLOR[hl.color] ?? 0, anchor, note: '', createdAt: created }, { silent: true });
+    if (existingAnns.has(annId) || skipAnn(annId)) continue;
+    await saveAnn({ id: annId, docId: id, kind: 'hl', color: COLOR[hl.color] ?? 0, anchor, note: '', createdAt: created, deleted: false }, { silent: true });
     report.highlights++;
   }
   for (const n of reader.notes || []) {
@@ -248,11 +251,11 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
       }
     } else {
       const annId = `a-${n.id}`;
-      if (existingAnns.has(annId)) continue;
+      if (existingAnns.has(annId) || skipAnn(annId)) continue;
       const quote = String(n.quote || '').trim();
       const anchor = findAnchor(n.blockIndex || 0, quote || body.slice(0, 20));
       if (anchor.legacy) report.orphans++;
-      await saveAnn({ id: annId, docId: id, kind: 'hl', color: 0, anchor, note: body, createdAt: created }, { silent: true });
+      await saveAnn({ id: annId, docId: id, kind: 'hl', color: 0, anchor, note: body, createdAt: created, deleted: false }, { silent: true });
       report.notes++;
     }
   }

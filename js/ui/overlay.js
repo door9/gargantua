@@ -185,7 +185,8 @@ export function menu(anchor, items, { align = 'right', title = '' } = {}) {
     popEntry(entry, fromHistory);
     wrap.remove();
   }
-  wrap.addEventListener('pointerdown', (e) => { if (e.target === wrap) close(); });
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) { e.preventDefault(); e.stopPropagation(); close(); } });
+  wrap.addEventListener('contextmenu', (e) => { if (e.target === wrap) { e.preventDefault(); close(); } });
   wrap.addEventListener('keydown', (e) => {
     const btns = [...list.querySelectorAll('.gmenu-item:not([disabled])')];
     const i = btns.indexOf(document.activeElement);
@@ -269,6 +270,10 @@ export function popover(anchor, content, { className = '' } = {}) {
   const off = (e) => {
     if (box.contains(e.target) || anchor.contains(e.target)) return;
     closePopovers();
+    // 말풍선을 닫으려고 누른 것이 아래(쪽 넘기기·링크)까지 눌리지 않게 바로 다음 누름 하나를 삼킨다
+    const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    document.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), 600);
   };
   setTimeout(() => document.addEventListener('pointerdown', off, true), 0);
   box._off = off;

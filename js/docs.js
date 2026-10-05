@@ -85,6 +85,7 @@ export async function importOne(blob, name, { onStatus, id, addedAt, title } = {
     fileHash: hash,
     fileSize: blob.size,
     addedAt: addedAt || now(),
+    deleted: false,
   });
   await saveInfo(info);
   return { name, doc };

@@ -84,6 +84,8 @@ function fill(keepInput = false) {
   const tagCounts = new Map();
   for (const a of all) for (const t of tagsOf(a.note)) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
   const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40);
+  if (f.tag && !tagCounts.has(f.tag)) f.tag = '';
+  if (f.doc && !docsWith.some((d) => d.id === f.doc)) { f.doc = ''; sel.value = ''; }
   const tagRow = tags.length ? h('div', { class: 'tag-row' }, ...tags.map(([t, n]) => h('button', { class: `tag-chip${f.tag === t ? ' on' : ''}`, onclick: () => { f.tag = f.tag === t ? '' : t; fill(); } }, `#${t} ${n}`))) : null;
   const countLine = h('p', { class: 'note-count' });
   const list = h('div');
