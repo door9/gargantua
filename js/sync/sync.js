@@ -6,10 +6,16 @@ import { emit, on, debounce, dayKey, sha256Hex, uid, now } from '../util.js';
 import * as dbx from './dropbox.js';
 import { prepareMissing } from '../docs.js';
 
-export const REMOTE = '/web/library.json.gz';
-const FILES = '/web/files';
-const BACKUPS = '/web/backups';
+export const REMOTE = '/library.json.gz';
+const FILES = '/files';
+const BACKUPS = '/backups';
 const SCHEMA = 1;
+// 2026-10-06까지 쓰던 자리(/web). 옮기면서 '옮김 표시'(movedTo, schema 2)만 남겼다 —
+// 옛 판은 이것을 더 새 판의 기록으로 보고 멈추므로 옛 자리에 다시 쓰지 못한다. 2주 지나면 지운다.
+const LEGACY_DIR = '/web';
+const LEGACY_REMOTE = '/web/library.json.gz';
+const LEGACY_KEEP_MS = 14 * 86400000;
+let legacyChecked = false;
 // 서재·백업 파일의 이름표. 2026-10-06 첫날 'gargantua-web'으로 쓴 것도 읽는다
 export const APP_ID = 'gargantua';
 export const APP_IDS = [APP_ID, 'gargantua-web'];
@@ -131,6 +137,9 @@ async function doSync({ reason = '', force = false } = {}) {
   if (!navigator.onLine) { setStatus({ state: 'idle', label: '오프라인 — 연결되면 동기화' }); return; }
   setStatus({ state: 'busy', label: '동기화 중' });
   try {
+    if (!legacyChecked) {
+      try { await checkLegacy(); legacyChecked = true; } catch (e) { console.warn('옛 자리 살피기 실패', e); }
+    }
     let uploaded = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       const m = await dbx.meta(REMOTE);
@@ -186,6 +195,35 @@ async function doSync({ reason = '', force = false } = {}) {
     else if (e instanceof dbx.DbxError && e.status === 0) setStatus({ state: 'idle', label: '오프라인 — 연결되면 동기화', error: '' });
     else setStatus({ state: 'error', label: '동기화 실패', error: msg });
   }
+}
+
+// 옛 자리(/web) 살피기: 아직 안 옮긴 Dropbox면 새 자리로 옮기고, 옮김 표시는 2주 뒤 지우고,
+// 옮긴 뒤 옛 판이 써 둔 서재가 있으면 받아 합친 뒤 통째로 /old에 보관한다
+async function checkLegacy() {
+  const m = await dbx.meta(LEGACY_REMOTE);
+  if (!m) return;
+  const got = await dbx.download(LEGACY_REMOTE);
+  const data = got ? await decodePayload(got.blob) : null;
+  if (data?.movedTo) {
+    if (Date.now() - Date.parse(m.server_modified) < LEGACY_KEEP_MS) return;
+    await dbx.remove(LEGACY_REMOTE);
+    if (!(await dbx.list(LEGACY_DIR)).length) await dbx.remove(LEGACY_DIR);
+    return;
+  }
+  if (!(await dbx.meta(REMOTE))) {
+    for (const [from, to] of [[`${LEGACY_DIR}/files`, FILES], [`${LEGACY_DIR}/backups`, BACKUPS], [LEGACY_REMOTE, REMOTE]]) {
+      try { await dbx.move(from, to); } catch (e) { if (!(e instanceof dbx.DbxError && e.notFound)) throw e; }
+    }
+    await dbx.upload(LEGACY_REMOTE, new Blob([JSON.stringify({ app: APP_ID, schema: 2, movedTo: REMOTE })]), { mode: 'add' });
+    return;
+  }
+  if (data && APP_IDS.includes(data.app) && (data.schema || 1) <= SCHEMA) {
+    await applyRemote(data);
+    state.changeSeq += 1;
+    await kvSet('changeSeq', state.changeSeq);
+  }
+  const t = new Date();
+  await dbx.move(LEGACY_DIR, `/old/web-${dayKey(t).replaceAll('-', '')}-${t.toTimeString().slice(0, 8).replaceAll(':', '')}`, { autorename: true });
 }
 
 // 다른 기기의 기록 합치기

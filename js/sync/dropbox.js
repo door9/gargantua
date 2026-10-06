@@ -277,6 +277,19 @@ export async function list(path) {
   return entries;
 }
 
+export async function move(from, to, { autorename = false } = {}) {
+  return rpc('files/move_v2', { from_path: from, to_path: to, autorename });
+}
+
+export async function remove(path) {
+  try {
+    return await rpc('files/delete_v2', { path });
+  } catch (e) {
+    if (e instanceof DbxError && e.notFound) return null;
+    throw e;
+  }
+}
+
 export async function copy(from, to) {
   try {
     return await rpc('files/copy_v2', { from_path: from, to_path: to, autorename: false });

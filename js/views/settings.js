@@ -35,7 +35,7 @@ async function fill() {
   const body = root.querySelector('.vbody');
   body.textContent = '';
   syncBox = h('div');
-  body.append(section('Dropbox 동기화', 'Dropbox에 연결하면 서재 기록(하이라이트·메모·책갈피·읽던 위치·독서 시간)이 자동으로 백업되고, PC·휴대폰 어디서 열어도 같은 서재가 됩니다. 원본 파일은 한 번만 올리고, 다른 기기에서는 처음 열 때 받아 옵니다. 날마다 기록 사본도 Dropbox <b>Apps/Gargantua Door 9 Labs/web/backups</b>에 따로 남깁니다.', syncBox));
+  body.append(section('Dropbox 동기화', 'Dropbox에 연결하면 서재 기록(하이라이트·메모·책갈피·읽던 위치·독서 시간)이 자동으로 백업되고, PC·휴대폰 어디서 열어도 같은 서재가 됩니다. 원본 파일은 한 번만 올리고, 다른 기기에서는 처음 열 때 받아 옵니다. 날마다 기록 사본도 Dropbox <b>Apps/Gargantua Door 9 Labs/backups</b>에 따로 남깁니다.', syncBox));
   await paintSync();
 
   body.append(section('안드로이드 앱에서 옮겨 오기', '안드로이드 Gargantua 앱의 서재(문서·하이라이트·메모·책갈피·읽던 위치)를 그대로 가져옵니다. 여러 번 가져와도 겹치지 않습니다. 원본 안드로이드 앱의 자료는 건드리지 않습니다.',
@@ -184,8 +184,7 @@ export function connectFlow() {
             const acc = await dbx.finishAuth(code);
             done = true;
             toast(`Dropbox에 연결했습니다${acc?.name ? ` (${acc.name})` : ''}. 동기화를 시작합니다.`);
-            // 첫 동기화로 이미 옮긴 서재가 들어온 뒤에 안드로이드 가져오기를 물어야 다른 기기에서 헛되이 묻지 않는다
-            syncNow({ reason: 'connect', force: true }).finally(offerAndroidAfterConnect);
+            syncNow({ reason: 'connect', force: true });
             paintSync();
             return false;
           } catch (e) {
@@ -197,20 +196,6 @@ export function connectFlow() {
       onClose: () => resolve(done),
     });
   });
-}
-
-async function offerAndroidAfterConnect() {
-  try {
-    const meta = await androidRemoteInfo();
-    if (!meta) return;
-    if (liveDocs().some((d) => d.id.startsWith('a-'))) return;
-    const ok = await confirmDialog({
-      title: '안드로이드 앱의 서재를 가져올까요?',
-      message: `<p>Dropbox에 안드로이드 Gargantua의 서재 백업이 있습니다.</p><p>${esc(fmtDateTime(Date.parse(meta.server_modified)))} · ${esc(fmtBytes(meta.size))}</p><p>문서와 하이라이트·메모·책갈피·읽던 위치를 그대로 가져옵니다.</p>`,
-      ok: '가져오기',
-    });
-    if (ok) runAndroidImport('dropbox');
-  } catch { /* 무시 */ }
 }
 
 export async function showAndroidImport() {
