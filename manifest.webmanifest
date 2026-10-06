@@ -8,7 +8,6 @@
   "start_url": "./#/library",
   "scope": "./",
   "display": "standalone",
-  "orientation": "any",
   "background_color": "#F7F4EC",
   "theme_color": "#F7F4EC",
   "categories": ["books", "education", "productivity"],
