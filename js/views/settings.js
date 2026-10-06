@@ -184,9 +184,9 @@ export function connectFlow() {
             const acc = await dbx.finishAuth(code);
             done = true;
             toast(`Dropbox에 연결했습니다${acc?.name ? ` (${acc.name})` : ''}. 동기화를 시작합니다.`);
-            syncNow({ reason: 'connect', force: true });
+            // 첫 동기화로 이미 옮긴 서재가 들어온 뒤에 안드로이드 가져오기를 물어야 다른 기기에서 헛되이 묻지 않는다
+            syncNow({ reason: 'connect', force: true }).finally(offerAndroidAfterConnect);
             paintSync();
-            offerAndroidAfterConnect();
             return false;
           } catch (e) {
             msg.textContent = e.message || String(e);

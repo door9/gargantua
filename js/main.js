@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '926ea67ba0';
+export const BUILD = 'd5ff164c4f';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
