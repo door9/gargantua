@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = 'acacd585e0';
+export const BUILD = 'd00c1fc6c2';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -41,7 +41,7 @@ function buildNav() {
     if (key === 'settings') nav.append(h('div', { class: 'g-nav-spacer' }));
     const btn = h('button', {
       class: `g-nav-item${v.navPc ? ' pc-only' : ''}`, 'data-view': key, 'aria-label': v.label,
-      html: `${ico(v.icon)}<span>${v.label}</span>`,
+      html: `${ico(v.icon)}<span class="g-nav-label">${v.label}</span>`,
       onclick: () => navigate(`#/${key}`),
     });
     nav.append(btn);
