@@ -133,7 +133,7 @@ body.reading .g-nav, body.reading .app { display: none; }
 /* ── 공용 부품 ── */
 .gicon { width: 40px; height: 40px; border-radius: 12px; display: inline-grid; place-items: center; color: var(--ink-2); flex: none; }
 .gicon:hover { background: var(--surface-2); }
-.gicon.small { width: 32px; height: 32px; font-size: 18px; font-weight: 600; }
+.gicon.small { width: 32px; height: 32px; font-size: 18px; }
 .gicon.on { color: var(--accent); }
 .gbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 16px; border-radius: var(--radius-s); background: var(--surface); border: 1px solid var(--line-2); font-weight: 600; font-size: 14.5px; white-space: nowrap; }
 .gbtn:hover { background: var(--surface-2); }
@@ -170,7 +170,7 @@ textarea.gfield { height: auto; padding: 10px 12px; line-height: 1.6; resize: ve
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(18px); }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
-.seg-btn { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.seg-btn { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13.5px; color: var(--ink-2); white-space: nowrap; }
 .seg-btn.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
 input[type="range"] { accent-color: var(--accent); }
 .tag { color: var(--accent); font-weight: 600; }
@@ -229,6 +229,17 @@ body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 .gmenu-radio.on::after { content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--accent); }
 .gmenu-pad { width: 20px; flex: none; }
 .gmenu-div { height: 1px; background: var(--line); margin: 5px 4px; }
+/* 메뉴·창·설정 안의 글씨는 제목만 굵게, 나머지는 얇게(사용자 원칙 2026-10-06) */
+.gsheet .gbtn, .gmenu .gbtn, .gpop .gbtn, .set-sec .gbtn { font-weight: 400; }
+
+/* 숫자 돌려 맞추기(numwheel.js) — 한 칸 36px, 5칸 */
+.gpop.gwheel-pop { padding: 0; overflow: hidden; }
+.gwheel { position: relative; width: 96px; height: 180px; }
+.gwheel-band { position: absolute; left: 6px; right: 6px; top: 72px; height: 36px; border-radius: 9px; background: var(--accent-soft); pointer-events: none; }
+.gwheel-list { position: relative; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; padding: 72px 0; box-sizing: border-box; scrollbar-width: none; overscroll-behavior: contain; outline: none; -webkit-mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); }
+.gwheel-list::-webkit-scrollbar { display: none; }
+.gwheel-item { height: 36px; line-height: 36px; text-align: center; scroll-snap-align: center; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: pointer; }
+.gwheel-item.on { color: var(--ink); font-size: 17px; }
 
 /* 말풍선 */
 .gpop { position: fixed; z-index: 260; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 12px 14px; max-width: min(380px, 92vw); opacity: 0; transform: translateY(-3px); transition: opacity .12s, transform .12s; }
@@ -305,13 +316,13 @@ body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 .note-group { margin-bottom: 22px; }
 .note-group-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; cursor: pointer; }
 .note-group-head .cover { width: 30px; height: 42px; }
-.note-group-head b { font-size: 15px; font-family: var(--serif); }
-.note-group-head small { color: var(--muted); font-size: 12.5px; }
+.note-group-head b { font-size: 16.5px; font-family: var(--serif); }
+.note-group-head small { color: var(--muted); font-size: 13.5px; }
 .note-card { display: grid; grid-template-columns: 4px 1fr auto; gap: 12px; padding: 12px 6px 12px 0; border-bottom: 1px solid var(--line); }
 .note-card .stripe { border-radius: 3px; background: var(--c); }
-.note-card .q { font-family: var(--serif); font-size: 15px; line-height: 1.7; cursor: pointer; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-.note-card .n { font-size: 14px; line-height: 1.6; margin-top: 8px; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; color: var(--ink-2); }
-.note-card .m { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.note-card .q { font-family: var(--serif); font-size: 17px; line-height: 1.7; cursor: pointer; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.note-card .n { font-size: 16px; line-height: 1.6; margin-top: 8px; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; color: var(--ink-2); }
+.note-card .m { font-size: 13px; color: var(--muted); margin-top: 6px; }
 .note-card.orphan .q { opacity: .6; }
 .tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .tag-chip { height: 28px; padding: 0 10px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600; }
@@ -388,9 +399,10 @@ select.gfield { appearance: auto; padding-right: 8px; }
 .set-row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; min-height: 52px; border-top: 1px solid var(--line); }
 .set-sec h2 + .set-row { border-top: 0; }
 .set-row .l { flex: 1; min-width: 0; }
-.set-row .l b { display: block; font-weight: 600; font-size: 14.5px; }
+.set-row .l b { display: block; font-weight: 400; font-size: 14.5px; }
 .set-row .l small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; overflow-wrap: anywhere; }
 .set-row .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.set-rset { padding: 0 16px 8px; }
 .sync-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); display: inline-block; margin-right: 6px; }
 .sync-dot.ok { background: #3FA36F; } .sync-dot.busy { background: var(--horizon); } .sync-dot.err { background: var(--danger); }
 .code-steps { display: grid; gap: 12px; }

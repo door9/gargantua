@@ -1,11 +1,13 @@
-// 설정: Dropbox 자동 동기화, 백업, 화면, 저장 공간, 앱 정보
+// 설정: Dropbox 자동 동기화, 백업, 읽기 설정(모든 문서의 기본값), 화면, 저장 공간, 앱 정보
 import { h, esc, fmtBytes, fmtRelative, toast, downloadBlob, pickFiles, copyText } from '../util.js';
 import { ico } from '../icons.js';
-import { state, setApp, liveDocs, localFileHashes } from '../store.js';
+import { state, setApp, setReader, READER_DEFAULTS, liveDocs, localFileHashes } from '../store.js';
+import { kvSet } from '../db.js';
+import { readerSettingsBody } from '../ui/readerset.js';
 import { sheet, confirmDialog, infoButton, menu } from '../ui/overlay.js';
 import { navigate, requestPersist, APP_VERSION, BUILD } from '../main.js';
 import * as dbx from '../sync/dropbox.js';
-import { syncNow, syncStatus, onSyncStatus, disconnectDropbox, downloadAll, lastSync } from '../sync/sync.js';
+import { syncNow, syncStatus, onSyncStatus, disconnectDropbox, downloadAll, lastSync, keepLocalNow } from '../sync/sync.js';
 import { exportBackup, importBackupBlob } from '../sync/backup.js';
 
 let root = null;
@@ -42,6 +44,18 @@ async function fill() {
     row('백업 파일 만들기', `문서 ${liveDocs().length}개`, h('button', { class: 'gbtn small', onclick: () => doExport() }, '만들기')),
     row('백업 파일에서 가져오기', null, h('button', { class: 'gbtn small', onclick: () => doImport() }, '파일 선택'))));
 
+  const rset = readerSettingsBody({
+    kind: 'all',
+    get: () => state.reader,
+    set: (patch) => { setReader(patch); kvSet('readerTouched', true).catch(() => {}); },
+    reset: () => {
+      const { fontSize, lineHeight, margin, maxWidth, paraGap, indent, align, keepAll, hyphens, bookStyle, spread, pageAnim, pdfInvert } = READER_DEFAULTS;
+      setReader({ fontSize, lineHeight, margin, maxWidth, paraGap, indent, align, keepAll, hyphens, bookStyle, spread, pageAnim, pdfInvert });
+    },
+    resetLabel: '처음 값으로',
+  });
+  body.append(section('읽기 설정', '<p>모든 문서의 <b>기본값</b>입니다. 문서마다 읽기 화면의 읽기 설정에서 따로 바꿀 수 있고, 따로 바꾸지 않은 값은 여기를 따릅니다.</p><p>이 기기에 저장됩니다(PC·휴대폰 따로).</p>', h('div', { class: 'set-rset' }, rset.body)));
+
   const themeSeg = h('div', { class: 'seg' });
   for (const [k, label] of [['system', '시스템'], ['light', '밝게'], ['dark', '어둡게']]) {
     themeSeg.append(h('button', { class: `seg-btn${state.app.theme === k ? ' on' : ''}`, onclick: () => { setApp({ theme: k }); fill(); } }, label));
@@ -56,7 +70,11 @@ async function fill() {
 
   const storageRow = row('사용 중', '확인 중…');
   const persistRow = row('지우지 않게 보관', '확인 중…');
-  body.append(section('저장 공간', '문서와 기록은 이 기기의 브라우저 저장소에 있습니다. 브라우저의 "사이트 데이터 삭제"를 하면 지워지므로 Dropbox 동기화를 켜 두세요. "지우지 않게 보관"이 켜져 있으면 저장 공간이 부족해도 브라우저가 임의로 지우지 않습니다.', storageRow, persistRow));
+  const keepSw = h('input', { type: 'checkbox', class: 'switch', 'aria-label': '원본을 이 기기에 모두 받아 두기' });
+  keepSw.checked = state.app.keepOffline !== false;
+  keepSw.addEventListener('change', () => { setApp({ keepOffline: keepSw.checked }); if (keepSw.checked) keepLocalNow().catch(() => {}); });
+  body.append(section('저장 공간', '<p>문서와 기록은 이 기기의 브라우저 저장소에 있습니다. 브라우저의 "사이트 데이터 삭제"를 하면 지워지므로 Dropbox 동기화를 켜 두세요. "지우지 않게 보관"이 켜져 있으면 저장 공간이 부족해도 브라우저가 임의로 지우지 않습니다.</p><p><b>원본 모두 받아 두기</b>: 다른 기기에서 넣은 문서의 원본도 Dropbox에서 이 기기로 모두 받아 두어, 인터넷이 없어도 모든 문서가 열립니다. 휴대폰의 데이터 절약 모드에서는 건너뜁니다.</p>',
+    row('원본 모두 받아 두기(오프라인용)', null, keepSw), storageRow, persistRow));
   paintStorage(storageRow, persistRow);
 
   body.append(section('도움말', null,

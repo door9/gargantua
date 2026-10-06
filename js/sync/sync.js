@@ -187,7 +187,7 @@ async function doSync({ reason = '', force = false } = {}) {
     if (fileProblem) setStatus({ state: 'error', label: `원본 ${fileProblem.failed}개를 올리지 못함`, lastSync: lastSyncAt, error: fileProblem.error });
     else setStatus({ state: 'idle', label: '동기화됨', lastSync: lastSyncAt, error: '' });
     emit('sync-done', { uploaded, reason });
-    setTimeout(() => prepareMissing({ fetchFile: (d) => fetchRemoteFile(d) }).catch(() => {}), 1500);
+    setTimeout(() => keepLocal().catch(() => {}), 1500);
   } catch (e) {
     console.warn('동기화 실패', e);
     const msg = e?.message || String(e);
@@ -378,6 +378,28 @@ async function dailySnapshot() {
   await kvSet('lastSnapshot', today);
 }
 
+// 오프라인에서도 막힘 없게: 이 기기에 없는 원본을 모두 받아 두고(설정에서 끌 수 있음, 데이터 절약 모드면 건너뜀) 미리 펼쳐 둔다
+let keeping = false;
+async function keepLocal() {
+  if (keeping) return;
+  keeping = true;
+  try {
+    if (state.app.keepOffline !== false && navigator.onLine && !navigator.connection?.saveData) {
+      const n = await downloadAll((i, total) => setStatus({ state: 'busy', label: `원본 받는 중 ${i}/${total}` }));
+      if (n) {
+        navigator.storage?.persist?.().catch(() => {});
+        if (status.state === 'busy') setStatus({ state: 'idle', label: '동기화됨', lastSync: lastSyncAt, error: '' });
+      }
+    }
+    await prepareMissing({ fetchFile: (d) => fetchRemoteFile(d) });
+  } finally {
+    keeping = false;
+  }
+}
+export function keepLocalNow() {
+  return keepLocal();
+}
+
 // 이 기기에 없는 원본을 Dropbox에서 받아 오기
 export async function fetchRemoteFile(doc, onStatus) {
   if (!(await dbx.isConnected())) return null;
@@ -395,7 +417,9 @@ export async function fetchRemoteFile(doc, onStatus) {
 
 export async function downloadAll(onProgress) {
   const local = await localFileHashes(true);
-  const todo = liveDocs().filter((d) => d.fileHash && !local.has(d.fileHash));
+  // Dropbox에도 없는 원본(독서 사본만 옮겨 온 문서 등)은 받으러 가지 않는다
+  const have = await listRemoteFiles().catch(() => null);
+  const todo = liveDocs().filter((d) => d.fileHash && !local.has(d.fileHash) && (!have || have.has(`${d.fileHash}.${d.format}`)));
   let i = 0;
   for (const d of todo) {
     i++;

@@ -2,11 +2,10 @@
 import { h, esc, debounce, throttle, sleep, toast, copyText, now, uid, emit, on, fmtMinutes, clamp } from '../util.js';
 import { ico } from '../icons.js';
 import {
-  state, saveAnn, removeAnn, restoreAnn, savePos, liveAnns, setReader, addReadingTime, addReadingProgress,
+  state, saveAnn, removeAnn, restoreAnn, savePos, liveAnns, setReader, setDocReader, readerFor, addReadingTime, addReadingProgress,
   readingSpeed, flushPositions, getFile, saveDoc,
 } from '../store.js';
 import { loadBook, loadResources, requireFile, loadPdfTexts } from '../docs.js';
-import { kvSet } from '../db.js';
 import { openPdf, pdfOutline, closePdf } from '../pdfdoc.js';
 import { textOf, offsetsFromRange, describe, resolveAnchor, caretFromPoint, offsetOfBoundary, rangeFromOffsets, textIndex } from '../text.js';
 import { rootFrom } from '../parse/common.js';
@@ -51,7 +50,6 @@ class Reader {
   constructor(doc, opts) {
     this.doc = doc;
     this.opts = opts;
-    this.settings = state.reader;
     this.isPdf = doc.format === 'pdf';
     this.resolved = new Map();
     this.unitAnns = new Map();
@@ -99,10 +97,17 @@ class Reader {
     }
   }
 
+  // 읽기 설정 = 설정 화면의 기본값 위에 이 문서에서 바꾼 값
+  get settings() {
+    return readerFor(this.doc.id);
+  }
+
   initialView() {
     if (this.isPdf) return 'pdf';
     if (this.opts.view) return this.opts.view;
-    return this.pos.view === 'paged' ? 'paged' : 'flow';
+    // 직접 고른 적이 있으면 그 보기, 아니면 EPUB은 전자책 보기·나머지는 줄글 보기(__gTest: 시험 도구가 옛 기본으로 열 때)
+    if (this.pos.viewPick) return this.pos.view === 'paged' ? 'paged' : 'flow';
+    return globalThis.__gTest?.view || (this.doc.format === 'epub' ? 'paged' : 'flow');
   }
 
   initialLoc() {
@@ -284,7 +289,7 @@ class Reader {
     await sleep(10);
     await this.mountView(kind, { loc, fresh: false });
     this.setLoading(null);
-    this.pos = savePos(this.doc.id, { view: kind });
+    this.pos = savePos(this.doc.id, { view: kind, viewPick: true });
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
   }
 
@@ -1255,8 +1260,8 @@ class Reader {
   showMenu(anchor) {
     const items = [];
     if (!this.isPdf) {
-      items.push({ label: '줄글 보기', checked: this.view.kind === 'flow', onClick: () => this.setView('flow') });
       items.push({ label: '전자책 보기', checked: this.view.kind === 'paged', onClick: () => this.setView('paged') });
+      items.push({ label: '줄글 보기', checked: this.view.kind === 'flow', onClick: () => this.setView('flow') });
       items.push({ divider: true });
       items.push({ label: 'Full · 전체 문서', checked: this.view.kind === 'flow' && this.mode === 'full', onClick: () => this.setMode('full') });
       items.push({ label: 'Random · 무작위', checked: this.view.kind === 'flow' && this.mode === 'random', onClick: () => (this.mode === 'random' ? this.shuffle() : this.setMode('random')) });
@@ -1281,9 +1286,7 @@ class Reader {
   applySettings(patch) {
     // 글자 크기 등이 바뀌기 전에 지금 자리를 잡아 둔다(바뀐 뒤 재면 다른 자리가 된다)
     if (this.view && !this.isPdf && !this.pendingLoc) this.pendingLoc = this.view.kind === 'paged' ? (this.view.anchorLoc || this.view.currentLoc()) : this.view.currentLoc();
-    setReader(patch);
-    kvSet('readerTouched', true).catch(() => {});
-    this.settings = state.reader;
+    setDocReader(this.doc.id, patch);
     this.applyTheme();
     if (this.view) {
       if ('bookStyle' in patch && this.view.kind === 'paged') {

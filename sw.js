@@ -1,13 +1,14 @@
-// Gargantua 서비스워커 — 오프라인 열기, 공유로 받은 파일 넘기기
+// Gargantua 서비스워커 — 오프라인 열기(앱 파일 + PDF 부품), 공유로 받은 파일 넘기기
 // 같은 주소(door9.github.io)의 다른 앱 캐시를 건드리지 않도록 gargantua- 로 시작하는 것만 정리한다.
-const VERSION = '30724b7dab';
+const VERSION = '48df4126ec';
 const CACHE = `gargantua-shell-${VERSION}`;
-const RUNTIME = 'gargantua-runtime-1';
+const RUNTIME = 'gargantua-runtime-1'; // PDF 부품 — 버전이 바뀌어도 남는다(pdf.js를 바꾸면 이름도 올릴 것)
 
+// 앱 파일 전부(stamp.py가 빠진 파일이 있으면 배포를 막는다)
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'manifest-samsung.webmanifest', 'css/app.css', 'css/reader.css',
   'js/manifest-pick.js', 'js/main.js', 'js/util.js', 'js/icons.js', 'js/db.js', 'js/store.js', 'js/text.js', 'js/docs.js', 'js/pdfdoc.js',
-  'js/ui/overlay.js',
+  'js/ui/overlay.js', 'js/ui/numwheel.js', 'js/ui/readerset.js',
   'js/parse/common.js', 'js/parse/epub.js', 'js/parse/docx.js', 'js/parse/plain.js', 'js/parse/index.js',
   'js/reader/index.js', 'js/reader/flow.js', 'js/reader/paged.js', 'js/reader/pdfview.js', 'js/reader/painter.js',
   'js/reader/chapters.js', 'js/reader/window.js', 'js/reader/panels.js', 'js/reader/actions.js',
@@ -38,7 +39,40 @@ self.addEventListener('activate', (event) => {
     const rt = await caches.open(RUNTIME);
     for (const req of await rt.keys()) if (!req.url.startsWith(self.registration.scope)) await rt.delete(req);
     await self.clients.claim();
+    await keepPdfParts();
   })());
+});
+
+// PDF 부품(글꼴 대응표·표준 글꼴·wasm 등, 약 4MB)을 미리 모두 받아 둔다 — 처음 여는 PDF도 오프라인에서 열리게.
+// 이미 받은 것은 건너뛰므로 앱을 열 때마다 불러도 된다(main.js가 'keep-parts'를 보낸다)
+let keeping = null;
+function keepPdfParts() {
+  keeping ||= (async () => {
+    try {
+      const list = await (await fetch('vendor/pdfjs/parts.json', { cache: 'no-cache' })).json();
+      const cache = await caches.open(RUNTIME);
+      const todo = [];
+      for (const p of list) {
+        const url = new URL(p, self.registration.scope).href;
+        if (!(await cache.match(url))) todo.push(url);
+      }
+      for (let i = 0; i < todo.length; i += 8) {
+        await Promise.all(todo.slice(i, i + 8).map(async (url) => {
+          const res = await fetch(url);
+          if (res.ok) await cache.put(url, res);
+        }));
+      }
+    } catch {
+      // 오프라인 등 — 다음에 앱을 열 때 이어서 받는다
+    } finally {
+      keeping = null;
+    }
+  })();
+  return keeping;
+}
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'keep-parts') event.waitUntil(keepPdfParts());
 });
 
 self.addEventListener('fetch', (event) => {

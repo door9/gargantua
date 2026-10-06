@@ -7,6 +7,7 @@ import { toGlobal, fromGlobal, chapterAt } from './chapters.js';
 import { pdfOutline } from '../pdfdoc.js';
 import { noteEditor, citeText, noteHtml } from './actions.js';
 import { exportNotesMarkdown } from '../views/notes-export.js';
+import { readerSettingsBody } from '../ui/readerset.js';
 import { sentenceBounds } from '../text.js';
 
 const COLOR_NAMES = ['노랑', '민트', '분홍', '파랑'];
@@ -252,84 +253,16 @@ export function showFindList(r) {
   setTimeout(() => list.querySelector('.current')?.scrollIntoView({ block: 'center' }), 50);
 }
 
-// ── 읽기 설정 ──
+// ── 읽기 설정: 이 문서에만 적용(처음 값은 설정 화면의 읽기 설정) ──
 export function showSettings(r) {
-  const body = h('div', { class: 'rset' });
-  const st = () => state.reader;
-  const seg = (label, key, options) => {
-    const row = h('div', { class: 'rset-row' }, h('span', { class: 'rset-label' }, label));
-    const group = h('div', { class: 'seg', role: 'radiogroup' });
-    for (const [value, text] of options) {
-      group.append(h('button', {
-        class: `seg-btn${st()[key] === value ? ' on' : ''}`, role: 'radio', 'aria-checked': String(st()[key] === value),
-        onclick: () => { r.applySettings({ [key]: value }); render(); },
-      }, text));
-    }
-    row.append(group);
-    return row;
-  };
-  const slider = (label, key, min, max, step, fmt) => {
-    const value = st()[key];
-    const out = h('span', { class: 'rset-val' }, fmt(value));
-    const input = h('input', { type: 'range', min, max, step, value, 'aria-label': label });
-    const set = (v) => {
-      v = clamp(Math.round(v / step) * step, min, max);
-      v = +v.toFixed(3);
-      input.value = v;
-      out.textContent = fmt(v);
-      r.applySettings({ [key]: v });
-    };
-    input.addEventListener('input', () => set(parseFloat(input.value)));
-    return h('div', { class: 'rset-row slider' },
-      h('span', { class: 'rset-label' }, label),
-      h('button', { class: 'gicon small', 'aria-label': `${label} 줄이기`, html: '−', onclick: () => set(parseFloat(input.value) - step) }),
-      input,
-      h('button', { class: 'gicon small', 'aria-label': `${label} 늘리기`, html: '+', onclick: () => set(parseFloat(input.value) + step) }),
-      out);
-  };
-  const toggle = (label, key, hint) => {
-    const id = `t-${key}`;
-    const input = h('input', { type: 'checkbox', id, class: 'switch' });
-    input.checked = st()[key] !== false;
-    input.addEventListener('change', () => r.applySettings({ [key]: input.checked }));
-    return h('div', { class: 'rset-row' }, h('label', { class: 'rset-label', for: id }, label, hint ? h('small', null, hint) : null), input);
-  };
-  const render = () => {
-    body.textContent = '';
-    body.append(
-      seg('배경', 'palette', [['paper', '종이'], ['sepia', '세피아'], ['night', '야간']]),
-      seg('글꼴', 'typeface', [['serif', '명조'], ['sans', '고딕']]),
-      slider('글자 크기', 'fontSize', 12, 32, 0.5, (v) => v.toFixed(1)),
-      slider('줄 간격', 'lineHeight', 1.2, 2.4, 0.02, (v) => v.toFixed(2)),
-      slider('좌우 여백', 'margin', 8, 64, 1, (v) => String(Math.round(v))),
-    );
-    if (!r.isPdf) {
-      body.append(
-        slider('문단 간격', 'paraGap', 0, 1.6, 0.05, (v) => v.toFixed(2)),
-        slider('들여쓰기', 'indent', 0, 2, 0.5, (v) => v.toFixed(1)),
-        slider('본문 폭', 'maxWidth', 420, 1200, 10, (v) => String(Math.round(v))),
-        seg('정렬', 'align', [['justify', '양쪽'], ['left', '왼쪽']]),
-        seg('한글 줄바꿈', 'keepAll', [[false, '글자 단위'], [true, '낱말 단위']]),
-        toggle('영어 낱말 하이픈', 'hyphens'),
-        h('div', { class: 'rset-sub' }, '전자책 보기'),
-        toggle('책 원래 서식', 'bookStyle'),
-        seg('두 쪽 펼침', 'spread', [['auto', '자동'], ['on', '항상'], ['off', '안 함']]),
-        toggle('쪽 넘김 움직임', 'pageAnim'),
-      );
-    } else {
-      body.append(toggle('야간에 PDF 색 반전', 'pdfInvert'));
-    }
-    body.append(h('div', { class: 'rset-foot' }, h('button', {
-      class: 'gbtn ghost small',
-      onclick: () => {
-        const { fontSize, lineHeight, margin, maxWidth, paraGap, indent, align, keepAll, hyphens, bookStyle, spread, pageAnim } = READER_DEFAULTS;
-        r.applySettings({ fontSize, lineHeight, margin, maxWidth, paraGap, indent, align, keepAll, hyphens, bookStyle, spread, pageAnim });
-        render();
-      },
-    }, '기본값으로')));
-  };
-  render();
-  sheet({ title: '읽기 설정', body, className: 'rset-sheet' });
+  const { body } = readerSettingsBody({
+    kind: r.isPdf ? 'pdf' : 'text',
+    get: () => r.settings,
+    set: (patch) => r.applySettings(patch),
+    // 이 문서에서 바꾼 값을 모두 지워 기본값을 따르게
+    reset: () => r.applySettings(Object.fromEntries(Object.keys(READER_DEFAULTS).map((k) => [k, state.reader[k]]))),
+  });
+  sheet({ title: '읽기 설정', body, className: 'rset-sheet', headerExtra: infoButton('여기서 바꾼 값은 <b>이 문서에만</b> 적용됩니다. 처음 값(기본값)은 설정 → 읽기 설정을 따르고, "기본값으로"를 누르면 다시 그 값을 따릅니다.') });
 }
 
 // ── 문서 정보 ──

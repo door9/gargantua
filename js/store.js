@@ -17,6 +17,7 @@ export const READER_DEFAULTS = {
   bookStyle: true,
   spread: 'auto',
   pageAnim: true,
+  pdfInvert: true,
 };
 
 export const APP_DEFAULTS = {
@@ -26,6 +27,7 @@ export const APP_DEFAULTS = {
   libraryFilter: 'all',
   reviewDaily: 10,
   autoSync: true,
+  keepOffline: true, // Dropbox에 있는 원본을 이 기기에 모두 받아 두기(오프라인에서도 모든 문서가 열리게)
   lookupDict: 'naver',
 };
 
@@ -39,6 +41,8 @@ export const state = {
   info: new Map(),
   stats: {},
   reader: { ...READER_DEFAULTS },
+  // 문서마다 따로 바꾼 읽기 설정(이 기기 안, 문서 id → 바꾼 값만). 없는 값은 reader(설정 화면의 기본값)를 따른다
+  docReader: {},
   app: { ...APP_DEFAULTS },
   changeSeq: 0,
   ready: false,
@@ -70,9 +74,9 @@ export async function initStore() {
     await kvSet('deviceId', deviceId);
   }
   state.deviceId = deviceId;
-  const [docs, pos, anns, rev, info, reader, app, stats, seq] = await Promise.all([
+  const [docs, pos, anns, rev, info, reader, app, stats, seq, docReader] = await Promise.all([
     db.getAll('docs'), db.getAll('pos'), db.getAll('anns'), db.getAll('rev'), db.getAll('info'),
-    kvGet('readerSettings'), kvGet('appSettings'), kvGet('stats'), kvGet('changeSeq'),
+    kvGet('readerSettings'), kvGet('appSettings'), kvGet('stats'), kvGet('changeSeq'), kvGet('docReader'),
   ]);
   for (const d of docs) state.docs.set(d.id, d);
   for (const p of pos) state.pos.set(p.docId, p);
@@ -80,6 +84,7 @@ export async function initStore() {
   for (const r of rev) state.rev.set(r.annId, r);
   for (const i of info) state.info.set(i.docId, i);
   state.reader = { ...READER_DEFAULTS, ...(reader || {}) };
+  state.docReader = docReader || {};
   state.app = { ...APP_DEFAULTS, ...(app || {}) };
   state.stats = stats || {};
   state.changeSeq = seq || 0;
@@ -216,6 +221,21 @@ export function setReader(patch) {
   Object.assign(state.reader, patch);
   persistReader();
   emit('reader-settings', patch);
+}
+// 한 문서의 읽기 설정 = 기본값(설정 화면) 위에 그 문서에서 바꾼 값
+export function readerFor(docId) {
+  return { ...state.reader, ...(state.docReader[docId] || {}) };
+}
+const persistDocReader = debounce(() => kvSet('docReader', state.docReader), 250);
+// 기본값과 같아진 값은 지워 다시 기본값을 따르게 한다
+export function setDocReader(docId, patch) {
+  const own = { ...(state.docReader[docId] || {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === state.reader[k]) delete own[k]; else own[k] = v;
+  }
+  if (Object.keys(own).length) state.docReader[docId] = own; else delete state.docReader[docId];
+  persistDocReader();
+  emit('reader-settings', { docId, ...patch });
 }
 export function setApp(patch) {
   Object.assign(state.app, patch);

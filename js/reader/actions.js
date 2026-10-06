@@ -1,5 +1,5 @@
 // 선택한 글로 하는 일: 찾아보기(사전·백과·번역), 인용 복사, 메모 쓰기
-import { h, esc } from '../util.js';
+import { h, esc, toast } from '../util.js';
 import { menu, sheet, infoButton } from '../ui/overlay.js';
 
 const LOOKUPS = {
@@ -35,7 +35,7 @@ export function lookupMenu(anchor, text) {
     }, { divider: true });
   }
   for (const k of keys) {
-    items.push({ label: LOOKUPS[k].label, icon: 'external', onClick: () => window.open(LOOKUPS[k].url(q), '_blank', 'noopener') });
+    items.push({ label: LOOKUPS[k].label, icon: 'external', onClick: () => (navigator.onLine ? window.open(LOOKUPS[k].url(q), '_blank', 'noopener') : toast('사전·백과·번역은 인터넷에 연결되어 있어야 찾아볼 수 있습니다.')) });
   }
   menu(anchor, items, { title: `“${q.length > 24 ? `${q.slice(0, 24)}…` : q}” 찾아보기` });
 }

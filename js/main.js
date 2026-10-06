@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '30724b7dab';
+export const BUILD = '48df4126ec';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -211,6 +211,10 @@ function registerSW() {
   navigator.serviceWorker.getRegistrations().then((regs) => {
     for (const r of regs) if (new URL(r.scope).pathname === '/gargantua-web/') r.unregister();
   }).catch(() => {});
+  // PDF 부품을 미리 다 받아 두게 한다(오프라인에서 처음 여는 PDF용) — 인터넷이 돌아올 때도 이어서
+  const keepParts = () => navigator.serviceWorker.ready.then((r) => r.active?.postMessage({ type: 'keep-parts' })).catch(() => {});
+  keepParts();
+  addEventListener('online', keepParts);
   navigator.serviceWorker.register('sw.js').then((reg) => {
     const check = () => reg.update().catch(() => {});
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
