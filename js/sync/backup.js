@@ -1,4 +1,4 @@
-// 백업 파일 만들기·가져오기, 안드로이드 Gargantua 서재 옮겨 오기
+// 백업 파일 만들기·가져오기(옛 안드로이드 Gargantua의 백업 파일도 읽는다)
 import { Zip, ZipPassThrough, ZipDeflate, unzip, strFromU8, strToU8 } from '../../vendor/fflate.mjs';
 import { db, kvGet, kvSet } from '../db.js';
 import { state, liveDocs, getFile, putFile, saveAnn, savePos, setReader, saveDoc, liveAnns } from '../store.js';
@@ -7,14 +7,11 @@ import { applyRemote, APP_ID, APP_IDS } from './sync.js';
 import { resolveAnchor } from '../text.js';
 import { sha256Hex, now, emit, baseName } from '../util.js';
 import { fromGlobal } from '../reader/chapters.js';
-import * as dbx from './dropbox.js';
-
-// 안드로이드 앱은 2026-10-06 은퇴 — 남은 백업은 Dropbox old 폴더로 옮겼다(앱에서 다시 올리면 맨 위에 생긴다)
-const ANDROID_REMOTES = ['/old/Gargantua-library-backup.gargantua-backup', '/Gargantua-library-backup.gargantua-backup'];
 
 // ── 우리 백업(zip): gargantua.json + files/해시.형식 (첫날 백업은 gargantua-web.json) ──
 const META_NAME = 'gargantua.json';
 const META_NAMES = [META_NAME, 'gargantua-web.json'];
+
 export async function exportBackup({ onStatus } = {}) {
   const chunks = [];
   let done;
@@ -264,25 +261,4 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
     }
   }
   void saveDoc;
-}
-
-// Dropbox에 있는 안드로이드 백업 정보
-async function findAndroidRemote() {
-  for (const path of ANDROID_REMOTES) {
-    const meta = await dbx.meta(path);
-    if (meta) return { ...meta, path };
-  }
-  return null;
-}
-
-export async function androidRemoteInfo() {
-  if (!(await dbx.isConnected())) return null;
-  return findAndroidRemote();
-}
-
-export async function importAndroidFromDropbox({ onStatus } = {}) {
-  const found = await findAndroidRemote();
-  const got = found && await dbx.download(found.path, { onProgress: (p) => onStatus?.(`Dropbox에서 받는 중 ${Math.round(p * 100)}%`) });
-  if (!got) throw new Error('Dropbox에서 안드로이드 백업을 찾지 못했습니다. 안드로이드 앱에서 먼저 "Dropbox 서재 백업"을 해 주세요.');
-  return importBackupBlob(got.blob, { onStatus });
 }

@@ -8,7 +8,6 @@ import { ACCEPT, FORMATS } from '../parse/index.js';
 import { coverUrlCache } from '../docs.js';
 import { syncStatus, onSyncStatus } from '../sync/sync.js';
 import { todayStats } from './stats.js';
-import { showAndroidImport } from './settings.js';
 
 const covers = coverUrlCache();
 let root = null;
@@ -274,7 +273,6 @@ function emptyState() {
     h('p', null, 'TXT, Markdown, DOCX, PDF, EPUB 파일을 읽기 편한 화면으로 보여 드립니다.'),
     h('div', { class: 'actions' },
       h('button', { class: 'gbtn primary block', onclick: () => importPicker() }, h('span', { html: ico('import') }), '문서 가져오기'),
-      h('button', { class: 'gbtn block', onclick: () => showAndroidImport() }, h('span', { html: ico('phone') }), '안드로이드 앱 서재 가져오기'),
       h('button', { class: 'gbtn ghost block', onclick: () => navigate('#/settings') }, h('span', { html: ico('cloud') }), 'Dropbox 연결')));
 }
 

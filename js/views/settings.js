@@ -1,12 +1,12 @@
-// 설정: Dropbox 자동 동기화, 백업, 안드로이드 서재 옮기기, 화면, 저장 공간, 앱 정보
-import { h, esc, fmtDateTime, fmtBytes, fmtRelative, toast, downloadBlob, pickFiles, copyText } from '../util.js';
+// 설정: Dropbox 자동 동기화, 백업, 화면, 저장 공간, 앱 정보
+import { h, esc, fmtBytes, fmtRelative, toast, downloadBlob, pickFiles, copyText } from '../util.js';
 import { ico } from '../icons.js';
 import { state, setApp, liveDocs, localFileHashes } from '../store.js';
 import { sheet, confirmDialog, infoButton, menu } from '../ui/overlay.js';
 import { navigate, requestPersist, APP_VERSION, BUILD } from '../main.js';
 import * as dbx from '../sync/dropbox.js';
 import { syncNow, syncStatus, onSyncStatus, disconnectDropbox, downloadAll, lastSync } from '../sync/sync.js';
-import { exportBackup, importBackupBlob, androidRemoteInfo, importAndroidFromDropbox } from '../sync/backup.js';
+import { exportBackup, importBackupBlob } from '../sync/backup.js';
 
 let root = null;
 let off = null;
@@ -37,9 +37,6 @@ async function fill() {
   syncBox = h('div');
   body.append(section('Dropbox 동기화', 'Dropbox에 연결하면 서재 기록(하이라이트·메모·책갈피·읽던 위치·독서 시간)이 자동으로 백업되고, PC·휴대폰 어디서 열어도 같은 서재가 됩니다. 원본 파일은 한 번만 올리고, 다른 기기에서는 처음 열 때 받아 옵니다. 날마다 기록 사본도 Dropbox <b>Apps/Gargantua Door 9 Labs/backups</b>에 따로 남깁니다.', syncBox));
   await paintSync();
-
-  body.append(section('안드로이드 앱에서 옮겨 오기', '안드로이드 Gargantua 앱의 서재(문서·하이라이트·메모·책갈피·읽던 위치)를 그대로 가져옵니다. 여러 번 가져와도 겹치지 않습니다. 원본 안드로이드 앱의 자료는 건드리지 않습니다.',
-    row('안드로이드 서재 가져오기', null, h('button', { class: 'gbtn small', onclick: () => showAndroidImport() }, '가져오기'))));
 
   body.append(section('백업 파일', '서재 전체(원본 파일 포함)를 zip 파일 하나로 저장하거나, 그 파일에서 되살립니다. 되살릴 때는 지금 서재와 합쳐집니다(지우지 않음).',
     row('백업 파일 만들기', `문서 ${liveDocs().length}개`, h('button', { class: 'gbtn small', onclick: () => doExport() }, '만들기')),
@@ -173,7 +170,7 @@ export function connectFlow() {
       title: 'Dropbox 연결',
       body,
       className: 'gdialog',
-      headerExtra: infoButton('안드로이드 Gargantua 앱과 같은 Dropbox 앱(Gargantua Door 9 Labs)을 쓰므로, 휴대폰 앱이 올린 백업도 여기서 바로 가져올 수 있습니다. 비밀번호는 Gargantua가 보지 않습니다.'),
+      headerExtra: infoButton('비밀번호는 Gargantua가 보지 않습니다.'),
       actions: [
         { label: '취소' },
         { label: '연결', primary: true, onClick: async () => {
@@ -196,44 +193,6 @@ export function connectFlow() {
       onClose: () => resolve(done),
     });
   });
-}
-
-export async function showAndroidImport() {
-  const connected = await dbx.isConnected();
-  let meta = null;
-  if (connected) { try { meta = await androidRemoteInfo(); } catch { meta = null; } }
-  const body = h('div', { class: 'code-steps' });
-  let s;
-  if (connected && meta) {
-    body.append(h('div', { class: 'set-sec' }, row('Dropbox의 안드로이드 백업', `${fmtDateTime(Date.parse(meta.server_modified))} · ${fmtBytes(meta.size)}`, h('button', { class: 'gbtn primary small', onclick: () => { s.close(); runAndroidImport('dropbox'); } }, '가져오기'))));
-  } else if (connected) {
-    body.append(h('p', { class: 'gfield-hint' }, 'Dropbox에 안드로이드 백업이 아직 없습니다. 휴대폰의 안드로이드 Gargantua에서 ⋮ → "Dropbox 서재 백업" → "지금 백업"을 누른 뒤 다시 열어 주세요.'));
-  } else {
-    body.append(h('div', { class: 'set-sec' }, row('Dropbox로 가져오기', '안드로이드 앱이 Dropbox에 올린 백업', h('button', { class: 'gbtn small', onclick: async () => { s.close(); if (await connectFlow()) showAndroidImport(); } }, 'Dropbox 연결'))));
-  }
-  body.append(h('div', { class: 'set-sec' }, row('백업 파일로 가져오기', '안드로이드 앱의 "기기 백업 내보내기" 파일(.gargantua-backup)', h('button', { class: 'gbtn small', onclick: () => { s.close(); runAndroidImport('file'); } }, '파일 선택'))));
-  s = sheet({ title: '안드로이드 서재 가져오기', body, className: 'gdialog' });
-}
-
-async function runAndroidImport(source) {
-  let blob = null;
-  if (source === 'file') {
-    const files = await pickFiles({ accept: '.gargantua-backup,.zip,application/zip,application/octet-stream', multiple: false });
-    if (!files.length) return;
-    blob = files[0];
-  }
-  const status = h('div', { class: 'import-status' }, h('div', { class: 'spinner' }), h('span', null, '가져오는 중'));
-  document.body.append(status);
-  try {
-    const onStatus = (m) => { status.lastChild.textContent = m; };
-    const rep = source === 'dropbox' ? await importAndroidFromDropbox({ onStatus }) : await importBackupBlob(blob, { onStatus });
-    status.remove();
-    showReport(rep);
-    requestPersist();
-  } catch (e) {
-    status.remove();
-    toast(e.message || String(e), { duration: 7000 });
-  }
 }
 
 function showReport(rep) {
