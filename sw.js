@@ -1,6 +1,6 @@
 // Gargantua 서비스워커 — 오프라인 열기, 공유로 받은 파일 넘기기
 // 같은 주소(door9.github.io)의 다른 앱 캐시를 건드리지 않도록 gargantua- 로 시작하는 것만 정리한다.
-const VERSION = '8fc1cf9036';
+const VERSION = '1b551cd32c';
 const CACHE = `gargantua-shell-${VERSION}`;
 const RUNTIME = 'gargantua-runtime-1';
 
@@ -34,6 +34,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k.startsWith('gargantua-') && k !== CACHE && k !== RUNTIME).map((k) => caches.delete(k)));
+    // 옛 주소(/gargantua-web/)에서 받아 둔 PDF 부품은 지운다
+    const rt = await caches.open(RUNTIME);
+    for (const req of await rt.keys()) if (!req.url.startsWith(self.registration.scope)) await rt.delete(req);
     await self.clients.claim();
   })());
 });

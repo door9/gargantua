@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '8fc1cf9036';
+export const BUILD = '1b551cd32c';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -207,6 +207,10 @@ function bindLaunchQueue() {
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+  // 옛 주소(/gargantua-web/ → 2026-10-06 /gargantua/로 옮김)에 남은 서비스워커는 내린다
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const r of regs) if (new URL(r.scope).pathname === '/gargantua-web/') r.unregister();
+  }).catch(() => {});
   navigator.serviceWorker.register('sw.js').then((reg) => {
     const check = () => reg.update().catch(() => {});
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
