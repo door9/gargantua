@@ -10,6 +10,9 @@ export const REMOTE = '/web/library.json.gz';
 const FILES = '/web/files';
 const BACKUPS = '/web/backups';
 const SCHEMA = 1;
+// 서재·백업 파일의 이름표. 2026-10-06 첫날 'gargantua-web'으로 쓴 것도 읽는다
+export const APP_ID = 'gargantua';
+export const APP_IDS = [APP_ID, 'gargantua-web'];
 
 const status = { state: 'off', label: 'Dropbox 연결 안 됨', lastSync: 0, error: '' };
 const listeners = new Set();
@@ -111,7 +114,7 @@ export async function decodePayload(blob) {
 
 function payload() {
   return {
-    app: 'gargantua-web',
+    app: APP_ID,
     schema: SCHEMA,
     savedAt: Date.now(),
     device: state.deviceId,
@@ -136,7 +139,7 @@ async function doSync({ reason = '', force = false } = {}) {
         const got = await dbx.download(REMOTE);
         const data = got ? await decodePayload(got.blob) : null;
         if (data) {
-          if (data.app !== 'gargantua-web') throw new Error('Dropbox의 서재 파일 형식을 알 수 없습니다.');
+          if (!APP_IDS.includes(data.app)) throw new Error('Dropbox의 서재 파일 형식을 알 수 없습니다.');
           if ((data.schema || 1) > SCHEMA) {
             blockedByNewer = true;
             throw new Error('더 새 버전의 Gargantua가 쓴 기록입니다. 앱을 새로 고쳐 주세요.');

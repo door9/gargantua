@@ -1,6 +1,6 @@
 // Gargantua 서비스워커 — 오프라인 열기, 공유로 받은 파일 넘기기
 // 같은 주소(door9.github.io)의 다른 앱 캐시를 건드리지 않도록 gargantua- 로 시작하는 것만 정리한다.
-const VERSION = '1b551cd32c';
+const VERSION = '926ea67ba0';
 const CACHE = `gargantua-shell-${VERSION}`;
 const RUNTIME = 'gargantua-runtime-1';
 

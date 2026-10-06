@@ -3,15 +3,18 @@ import { Zip, ZipPassThrough, ZipDeflate, unzip, strFromU8, strToU8 } from '../.
 import { db, kvGet, kvSet } from '../db.js';
 import { state, liveDocs, getFile, putFile, saveAnn, savePos, setReader, saveDoc, liveAnns } from '../store.js';
 import { importOne } from '../docs.js';
-import { applyRemote } from './sync.js';
+import { applyRemote, APP_ID, APP_IDS } from './sync.js';
 import { resolveAnchor } from '../text.js';
 import { sha256Hex, now, emit, baseName } from '../util.js';
 import { fromGlobal } from '../reader/chapters.js';
 import * as dbx from './dropbox.js';
 
-export const ANDROID_REMOTE = '/Gargantua-library-backup.gargantua-backup';
+// 안드로이드 앱은 2026-10-06 은퇴 — 남은 백업은 Dropbox old 폴더로 옮겼다(앱에서 다시 올리면 맨 위에 생긴다)
+const ANDROID_REMOTES = ['/old/Gargantua-library-backup.gargantua-backup', '/Gargantua-library-backup.gargantua-backup'];
 
-// ── 우리 백업(zip): gargantua-web.json + files/해시.형식 ──
+// ── 우리 백업(zip): gargantua.json + files/해시.형식 (첫날 백업은 gargantua-web.json) ──
+const META_NAME = 'gargantua.json';
+const META_NAMES = [META_NAME, 'gargantua-web.json'];
 export async function exportBackup({ onStatus } = {}) {
   const chunks = [];
   let done;
@@ -22,11 +25,11 @@ export async function exportBackup({ onStatus } = {}) {
     if (final) done.resolve();
   });
   const data = {
-    app: 'gargantua-web', schema: 1, kind: 'backup', savedAt: Date.now(), device: state.deviceId,
+    app: APP_ID, schema: 1, kind: 'backup', savedAt: Date.now(), device: state.deviceId,
     docs: [...state.docs.values()], pos: [...state.pos.values()], anns: [...state.anns.values()], rev: [...state.rev.values()], stats: state.stats,
     reader: state.reader,
   };
-  const meta = new ZipDeflate('gargantua-web.json', { level: 6 });
+  const meta = new ZipDeflate(META_NAME, { level: 6 });
   zip.add(meta);
   meta.push(strToU8(JSON.stringify(data)), true);
   const docs = liveDocs();
@@ -64,14 +67,15 @@ export async function importBackupBlob(blob, { onStatus } = {}) {
   } catch {
     throw new Error('백업 파일을 열 수 없습니다(zip이 아니거나 손상됨).');
   }
-  if (files['gargantua-web.json']) return importWebBackup(files, { onStatus });
+  const metaName = META_NAMES.find((n) => files[n]);
+  if (metaName) return importWebBackup(files, metaName, { onStatus });
   if (files['gargantua_data/library.json'] || Object.keys(files).some((k) => k.startsWith('gargantua_data/'))) return importAndroid(files, { onStatus });
   throw new Error('Gargantua 백업 파일이 아닙니다.');
 }
 
-async function importWebBackup(files, { onStatus }) {
-  const data = JSON.parse(strFromU8(files['gargantua-web.json']));
-  if (data.app !== 'gargantua-web') throw new Error('알 수 없는 백업 형식입니다.');
+async function importWebBackup(files, metaName, { onStatus }) {
+  const data = JSON.parse(strFromU8(files[metaName]));
+  if (!APP_IDS.includes(data.app)) throw new Error('알 수 없는 백업 형식입니다.');
   const names = Object.keys(files).filter((k) => k.startsWith('files/'));
   let i = 0;
   for (const name of names) {
@@ -263,13 +267,22 @@ async function importAndroidDoc(files, d, sources, report, onStatus) {
 }
 
 // Dropbox에 있는 안드로이드 백업 정보
+async function findAndroidRemote() {
+  for (const path of ANDROID_REMOTES) {
+    const meta = await dbx.meta(path);
+    if (meta) return { ...meta, path };
+  }
+  return null;
+}
+
 export async function androidRemoteInfo() {
   if (!(await dbx.isConnected())) return null;
-  return dbx.meta(ANDROID_REMOTE);
+  return findAndroidRemote();
 }
 
 export async function importAndroidFromDropbox({ onStatus } = {}) {
-  const got = await dbx.download(ANDROID_REMOTE, { onProgress: (p) => onStatus?.(`Dropbox에서 받는 중 ${Math.round(p * 100)}%`) });
+  const found = await findAndroidRemote();
+  const got = found && await dbx.download(found.path, { onProgress: (p) => onStatus?.(`Dropbox에서 받는 중 ${Math.round(p * 100)}%`) });
   if (!got) throw new Error('Dropbox에서 안드로이드 백업을 찾지 못했습니다. 안드로이드 앱에서 먼저 "Dropbox 서재 백업"을 해 주세요.');
   return importBackupBlob(got.blob, { onStatus });
 }
