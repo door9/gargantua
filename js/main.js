@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = 'd00c1fc6c2';
+export const BUILD = 'b564c662e0';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -215,8 +215,23 @@ function registerSW() {
   const keepParts = () => navigator.serviceWorker.ready.then((r) => r.active?.postMessage({ type: 'keep-parts' })).catch(() => {});
   keepParts();
   addEventListener('online', keepParts);
+  // 다시 로그인하고 돌아온 주소(?login=1)는 지운다
+  if (new URLSearchParams(location.search).has('login')) history.replaceState(null, '', location.pathname + location.hash);
+  // Cloudflare 잠금(Access) 로그인이 만료되면 앱은 저장본으로 열리지만 새 버전을 못 받는다 — 알리고 다시 로그인하게 한다
+  const loginExpired = () => fetch('sw.js', { cache: 'no-store', redirect: 'manual' }).then((res) => res.type === 'opaqueredirect').catch(() => false);
+  let loginAsked = false;
   navigator.serviceWorker.register('sw.js').then((reg) => {
-    const check = () => reg.update().catch(() => {});
+    const check = async () => {
+      if (await loginExpired()) {
+        if (!loginAsked) {
+          loginAsked = true;
+          toast('로그인이 만료되어 새 버전을 받지 못합니다.', { action: '다시 로그인', onAction: () => location.assign('./?login=1'), duration: 15000 });
+        }
+        return;
+      }
+      reg.update().catch(() => {});
+    };
+    check();
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
     setInterval(check, 30 * 60 * 1000);
   }).catch((e) => console.warn('서비스워커 등록 실패', e));

@@ -1,6 +1,6 @@
 // Gargantua 서비스워커 — 오프라인 열기(앱 파일 + PDF 부품), 공유로 받은 파일 넘기기
 // 같은 주소(door9.github.io)의 다른 앱 캐시를 건드리지 않도록 gargantua- 로 시작하는 것만 정리한다.
-const VERSION = 'd00c1fc6c2';
+const VERSION = 'b564c662e0';
 const CACHE = `gargantua-shell-${VERSION}`;
 const RUNTIME = 'gargantua-runtime-1'; // PDF 부품 — 버전이 바뀌어도 남는다(pdf.js를 바꾸면 이름도 올릴 것)
 
@@ -93,6 +93,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (req.mode === 'navigate') {
+    // 다시 로그인(?login=1)은 저장본을 건너뛰고 서버로 간다 — 잠금(Cloudflare Access)이 로그인 화면으로 보낸다
+    if (url.searchParams.has('login')) {
+      event.respondWith(fetch(req).catch(async () => (await caches.open(CACHE)).match('index.html')));
+      return;
+    }
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
       return (await cache.match('index.html')) || fetch(req);
