@@ -25,7 +25,8 @@ self.addEventListener('install', (event) => {
     await Promise.all(SHELL.map(async (path) => {
       const res = await fetch(new Request(path, { cache: 'reload' }));
       if (!res.ok) throw new Error(`${path} ${res.status}`);
-      await cache.put(path, res);
+      // Cloudflare는 index.html을 ./로 돌려보낸다 — 돌려받은 응답을 그대로 두면 크롬이 화면으로 쓰지 않아 앱이 안 열린다
+      await cache.put(path, res.redirected ? new Response(await res.blob(), { status: res.status, statusText: res.statusText, headers: res.headers }) : res);
     }));
     await self.skipWaiting();
   })());
