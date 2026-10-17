@@ -3,14 +3,14 @@ import { iconSprite, ico } from './icons.js';
 import { openDb, db } from './db.js';
 import { initStore, state, setApp, flushPositions } from './store.js';
 import { h, toast, on, debounce } from './util.js';
-import { handlePopState, closeAllOverlays, whenHistorySettled } from './ui/overlay.js';
+import { handlePopState, closeAllOverlays, whenHistorySettled, overlayCount } from './ui/overlay.js';
 import { openReader, closeReader, currentReader } from './reader/index.js';
 import { importFiles } from './docs.js';
 import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = 'c2e5f10b46';
+export const BUILD = '79382f9188';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -262,13 +262,15 @@ function registerSW() {
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) { hadController = true; return; }
-    if (document.visibilityState === 'hidden') { apply(); return; }
     const onHide = () => {
-      if (document.visibilityState !== 'hidden') return;
+      // 창(메모 쓰기·Dropbox 연결 등)이 열려 있으면 다음번으로 미룬다 — 다른 앱에서 글이나 코드를 복사해 오는 사이
+      // 다시 열려 쓰던 내용이 사라지지 않게
+      if (document.visibilityState !== 'hidden' || overlayCount()) return;
       document.removeEventListener('visibilitychange', onHide);
       apply();
     };
     document.addEventListener('visibilitychange', onHide);
+    onHide();
   });
 }
 
