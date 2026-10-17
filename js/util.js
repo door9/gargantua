@@ -200,20 +200,18 @@ export async function copyText(text) {
   }
 }
 
+// 파일 고르기. 휴대폰은 고르기 창이 닫힌 뒤 고른 파일을 복사하느라 파일 정보가 몇 초 늦게 오기도 하고,
+// 삼성 인터넷은 '카메라·파일' 고르기 창이 닫힐 때 앱이 잠깐 앞으로 온다 — 그래서 시간으로 취소를 짐작하지 않는다
+// (예전에는 앱이 앞으로 온 뒤 1.2초 안에 안 오면 버려 첫 시도가 사라졌다). 취소는 브라우저가 알려 주는 cancel로만 안다.
 export function pickFiles({ accept = '', multiple = true } = {}) {
+  // cancel을 알려 주지 않는 옛 브라우저에서 남은 칸은 다음에 고를 때 치운다
+  for (const old of document.querySelectorAll('input.g-picker')) old.remove();
   return new Promise((resolve) => {
-    const input = h('input', { type: 'file', accept, style: 'display:none' });
+    const input = h('input', { type: 'file', accept, class: 'g-picker', style: 'display:none' });
     if (multiple) input.multiple = true;
-    let settled = false;
-    input.addEventListener('change', () => {
-      settled = true;
-      resolve([...(input.files || [])]);
-      input.remove();
-    });
-    // 취소하면 change가 오지 않는다 — 창이 다시 보일 때 정리
-    window.addEventListener('focus', () => setTimeout(() => {
-      if (!settled) { resolve([]); input.remove(); }
-    }, 1200), { once: true });
+    const done = (files) => { input.remove(); resolve(files); };
+    input.addEventListener('change', () => done([...(input.files || [])]), { once: true });
+    input.addEventListener('cancel', () => done([]), { once: true });
     document.body.append(input);
     input.click();
   });

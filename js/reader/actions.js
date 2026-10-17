@@ -1,6 +1,6 @@
 // 선택한 글로 하는 일: 찾아보기(사전·백과·번역), 인용 복사, 메모 쓰기
 import { h, esc, toast } from '../util.js';
-import { menu, sheet, infoButton } from '../ui/overlay.js';
+import { menu, sheet, infoButton, whenHistorySettled } from '../ui/overlay.js';
 
 const LOOKUPS = {
   koDict: { label: '국어사전', url: (q) => `https://ko.dict.naver.com/#/search?query=${encodeURIComponent(q)}` },
@@ -48,9 +48,28 @@ export function citeText(doc, ann, where = '') {
   return out;
 }
 
+// 쓰던 메모가 '저장'이 아닌 방법(바깥 누르기·뒤로·Esc·끌어 내리기)으로 닫혔을 때 묻는다.
+// 이 물음도 실수로 닫힐 수 있으니 '버리기'를 눌렀을 때만 버리고 나머지는 저장한다
+function askKeepNote() {
+  return new Promise((resolve) => {
+    let drop = false;
+    sheet({
+      title: '메모를 저장할까요?',
+      body: h('div', { class: 'gdialog-msg' }, '저장하지 않고 닫으면 지금 쓴 내용이 사라집니다.'),
+      className: 'gdialog',
+      actions: [
+        { label: '버리기', onClick: () => { drop = true; } },
+        { label: '저장', primary: true },
+      ],
+      onClose: () => resolve(!drop),
+    });
+  });
+}
+
 export function noteEditor({ quote = '', value = '', title = '메모' } = {}) {
   return new Promise((resolve) => {
     let result = null;
+    let cancelled = false;
     const ta = h('textarea', { class: 'gfield note-input', rows: 6, placeholder: '떠오른 생각을 적어 보세요.', maxlength: 20000 });
     ta.value = value;
     const body = h('div', { class: 'note-editor' },
@@ -63,10 +82,16 @@ export function noteEditor({ quote = '', value = '', title = '메모' } = {}) {
       className: 'gdialog note-sheet',
       headerExtra: info,
       actions: [
-        { label: '취소' },
+        { label: '취소', onClick: () => { cancelled = true; } },
         { label: '저장', primary: true, onClick: () => { result = ta.value; } },
       ],
-      onClose: () => resolve(result),
+      onClose: async () => {
+        if (result == null && !cancelled && ta.value.trim() && ta.value !== value) {
+          await whenHistorySettled(); // 닫으며 부른 '뒤로'가 끝난 뒤에 물음 창을 쌓는다
+          if (await askKeepNote()) result = ta.value;
+        }
+        resolve(result);
+      },
     });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {

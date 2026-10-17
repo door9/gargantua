@@ -126,7 +126,11 @@ function show() {
     h('p', { class: 'rv-quote' }, a.anchor?.quote || ''),
     a.note ? h('div', { class: 'rv-note', html: noteHtml(a.note) }) : null,
     h('div', { class: 'rv-src' }, h('b', null, doc?.title || ''), annWhere(a) ? h('span', null, annWhere(a)) : null, rev?.reps ? h('span', null, `${rev.reps}번째 만남`) : h('span', null, '첫 만남')));
+  // 빠르게 두 번 누르면 이 카드가 두 번 채점되고 다음 카드는 보지도 못한 채 넘어가던 것을 막는다
+  let graded = false;
   const grade = async (kind) => {
+    if (graded) return;
+    graded = true;
     const today = dayKey();
     const r = state.rev.get(a.id) || {};
     let reps = r.reps || 0;

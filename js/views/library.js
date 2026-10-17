@@ -104,10 +104,16 @@ export async function importPicker() {
   if (files.length) runImport(files);
 }
 
+let fillGen = 0;
 async function fill() {
-  const docs = liveDocs();
+  const gen = ++fillGen;
   const box = listBox;
   if (!box) return;
+  // 기기 안 파일 목록을 기다리는 사이 다시 그리기가 겹치면(가져오기·동기화·필터가 잇달 때) 목록이 두 번 붙었다 —
+  // 기다린 뒤에 지우고 그리며, 더 늦게 시작한 그리기가 있으면 이번 것은 그만둔다
+  const local = await localFileHashes();
+  if (gen !== fillGen || box !== listBox) return;
+  const docs = liveDocs();
   const scrollY = window.scrollY;
   const prevFocus = document.activeElement?.classList?.contains('lib-search') ? document.activeElement.selectionStart : null;
   box.textContent = '';
@@ -116,7 +122,6 @@ async function fill() {
     box.append(emptyState());
     return;
   }
-  const local = await localFileHashes();
   const today = todayStats();
   const stats = h('div', { class: 'lib-today' },
     h('button', { class: 'lib-stat', onclick: () => navigate('#/stats') }, h('span', { html: ico('clock') }), `오늘 ${today.minutes}분`),

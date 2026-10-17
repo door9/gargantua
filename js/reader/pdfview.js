@@ -223,9 +223,11 @@ export class PdfView {
     return (this.lastLoc = { p: lo, y: +frac.toFixed(4) });
   }
 
-  async goTo(loc, { align = 'top' } = {}) {
+  // reveal: 옮겨 간 곳이 펼친 메뉴 밑에 가리지 않게(읽던 자리·확대 뒤 자리를 되살릴 때는 쓰지 않는다)
+  async goTo(loc, { align = 'top', reveal = false } = {}) {
     const p = clamp(loc.p ?? 0, 0, this.pages.length - 1);
     const div = this.pages[p].div;
+    const ins = reveal ? this.r.overlayInsets() : { top: 0, bottom: 0 };
     if (loc.start != null) {
       await this.renderPage(p);
       const tl = this.roots.get(p);
@@ -234,13 +236,13 @@ export class PdfView {
         const rect = range?.getBoundingClientRect();
         if (rect && (rect.width || rect.height)) {
           const box = this.el.getBoundingClientRect();
-          this.el.scrollTop += rect.top - box.top - (align === 'center' ? box.height * 0.33 : 40);
+          this.el.scrollTop += rect.top - box.top - ins.top - (align === 'center' ? (box.height - ins.top - ins.bottom) * 0.33 : 40);
           this.lastLoc = { p, y: 0 };
           return true;
         }
       }
     }
-    this.el.scrollTop = div.offsetTop + (loc.y || 0) * div.offsetHeight - 8;
+    this.el.scrollTop = div.offsetTop + (loc.y || 0) * div.offsetHeight - 8 - ins.top;
     this.lastLoc = { p, y: loc.y || 0 };
     return true;
   }
@@ -258,12 +260,16 @@ export class PdfView {
   scrollRangeIntoView(range) {
     const rect = range.getBoundingClientRect();
     const box = this.el.getBoundingClientRect();
-    if (rect.top >= box.top + 40 && rect.bottom <= box.bottom - 40) return;
-    this.el.scrollTop += rect.top - box.top - box.height * 0.3;
+    const ins = this.r.overlayInsets();
+    const top = box.top + ins.top;
+    const bottom = box.bottom - ins.bottom;
+    if (rect.top >= top + 40 && rect.bottom <= bottom - 40) return;
+    this.el.scrollTop += rect.top - top - (bottom - top) * 0.3;
   }
 
   scrollByPage(dir) {
-    this.el.scrollBy({ top: dir * (this.el.clientHeight - 60), behavior: 'smooth' });
+    const ins = this.r.overlayInsets();
+    this.el.scrollBy({ top: dir * (this.el.clientHeight - ins.top - ins.bottom - 60), behavior: 'smooth' });
   }
 
   pageInfo() {

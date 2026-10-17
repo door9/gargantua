@@ -1,7 +1,7 @@
 // 앱 시작·화면 전환·설치 앱 기능(공유로 받기, 파일 열기)
 import { iconSprite, ico } from './icons.js';
 import { openDb, db } from './db.js';
-import { initStore, state, setApp } from './store.js';
+import { initStore, state, setApp, flushPositions } from './store.js';
 import { h, toast, on, debounce } from './util.js';
 import { handlePopState, closeAllOverlays, whenHistorySettled } from './ui/overlay.js';
 import { openReader, closeReader, currentReader } from './reader/index.js';
@@ -10,7 +10,7 @@ import { initSync } from './sync/sync.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = 'b564c662e0';
+export const BUILD = 'c2e5f10b46';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -150,11 +150,17 @@ function bindDrop() {
   });
 }
 
-let importing = false;
-export async function runImport(files, { openSingle = true } = {}) {
-  if (!files.length) return [];
-  if (importing) { toast('가져오기가 진행 중입니다. 잠시 뒤 다시 시도해 주세요.'); return []; }
-  importing = true;
+// 가져오기는 한 번에 하나씩 줄을 세운다 — 진행 중에 들어온 파일(공유로 받기·끌어다 놓기·다시 고르기)을
+// 예전처럼 '잠시 뒤 다시'라며 버리지 않는다
+let importChain = Promise.resolve();
+export function runImport(files, opts = {}) {
+  if (!files.length) return Promise.resolve([]);
+  const job = importChain.then(() => importNow(files, opts));
+  importChain = job.catch(() => {});
+  return job;
+}
+
+async function importNow(files, { openSingle = true } = {}) {
   const status = h('div', { class: 'import-status' }, h('div', { class: 'spinner' }), h('span', null, '가져오는 중'));
   document.body.append(status);
   let results = [];
@@ -162,7 +168,6 @@ export async function runImport(files, { openSingle = true } = {}) {
     results = await importFiles(files, { onStatus: (m) => { status.lastChild.textContent = m; } });
   } finally {
     status.remove();
-    importing = false;
   }
   const ok = results.filter((r) => r.doc && !r.duplicate);
   const dup = results.filter((r) => r.duplicate);
@@ -183,13 +188,18 @@ export async function requestPersist() {
   } catch { /* 무시 */ }
 }
 
-// 다른 앱에서 '공유'로 보낸 파일·PC에서 '연결 프로그램'으로 연 파일
-async function takeInbox() {
-  const rows = await db.getAll('inbox');
-  if (!rows.length) return;
-  await db.clear('inbox');
-  const files = rows.map((r) => new File([r.blob], r.name || 'document', { type: r.blob.type }));
-  await runImport(files);
+// 다른 앱에서 '공유'로 보낸 파일·PC에서 '연결 프로그램'으로 연 파일.
+// 가져오기를 마친 뒤에 받은 편지함에서 지운다 — 도중에 앱이 꺼져도 다음에 열 때 이어서 가져온다
+let inboxChain = Promise.resolve();
+function takeInbox() {
+  inboxChain = inboxChain.then(async () => {
+    const rows = await db.getAll('inbox');
+    if (!rows.length) return;
+    const files = rows.map((r) => new File([r.blob], r.name || 'document', { type: r.blob.type }));
+    await runImport(files);
+    await db.delMany('inbox', rows.map((r) => r.id));
+  }).catch((e) => console.warn('받은 파일 가져오기 실패', e));
+  return inboxChain;
 }
 
 function bindLaunchQueue() {
@@ -238,18 +248,27 @@ function registerSW() {
   let reloading = false;
   // 처음 설치될 때(이전 관리자가 없을 때)는 다시 읽을 필요가 없다
   let hadController = !!navigator.serviceWorker.controller;
+  // 새 버전은 앱이 화면 뒤로 갔을 때(다른 앱으로 넘어가거나 화면을 끌 때) 조용히 적용한다.
+  // 보고 있는 화면을 바로 다시 열면 켤 때 시작 화면이 두 번 뜨고, 쓰던 메모·이름이 사라질 수 있었다.
+  // 그 사이 옛 화면이 새 판 부품을 섞어 쓰지 않도록 화면 부품은 boot에서 미리 모두 불러 둔다.
+  const apply = async () => {
+    if (reloading) return;
+    reloading = true;
+    try {
+      currentReader()?.flush();
+      await flushPositions();
+    } catch { /* 무시 */ }
+    location.reload();
+  };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) { hadController = true; return; }
-    if (reloading) return;
-    // 읽는 중이면 위치를 저장한 뒤 다시 연다
-    const r = currentReader();
-    const go = () => { reloading = true; location.reload(); };
-    if (r) {
-      toast('새 버전을 받았습니다. 서재로 나가면 적용됩니다.', { duration: 5000 });
-      const off = on('reader-closed', () => { off(); setTimeout(go, 200); });
-    } else {
-      go();
-    }
+    if (document.visibilityState === 'hidden') { apply(); return; }
+    const onHide = () => {
+      if (document.visibilityState !== 'hidden') return;
+      document.removeEventListener('visibilitychange', onHide);
+      apply();
+    };
+    document.addEventListener('visibilitychange', onHide);
   });
 }
 
@@ -283,6 +302,9 @@ async function boot() {
   await route();
   document.getElementById('boot').classList.add('done');
   setTimeout(() => document.getElementById('boot')?.remove(), 400);
+  // 화면 부품을 지금 판으로 모두 불러 둔 뒤에 새 버전을 살핀다(새 서비스워커는 곧바로 새 파일을 내주므로
+  // 나중에 처음 여는 화면이 새 판 부품이 되어 옛 부품과 섞이지 않게)
+  await Promise.all(Object.values(VIEWS).map((v) => v.load().catch(() => null)));
   registerSW();
   const refreshSoon = debounce(() => { refreshView(); updateNav(); }, 400);
   on('docs', refreshSoon);

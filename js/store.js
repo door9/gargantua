@@ -84,6 +84,11 @@ export async function initStore() {
   for (const r of rev) state.rev.set(r.annId, r);
   for (const i of info) state.info.set(i.docId, i);
   state.reader = { ...READER_DEFAULTS, ...(reader || {}) };
+  // PDF 확대는 문서마다 따로다(2026-10-17). 예전 판이 모든 문서의 기본값에 넣어 둔 확대는 걷어 낸다
+  if ('pdfZoom' in state.reader) {
+    delete state.reader.pdfZoom;
+    await kvSet('readerSettings', state.reader);
+  }
   state.docReader = docReader || {};
   state.app = { ...APP_DEFAULTS, ...(app || {}) };
   state.stats = stats || {};
@@ -149,22 +154,29 @@ export async function removeDoc(id) {
 
 // ── 읽던 위치·보기 방식 ──
 const posWrites = new Map();
+const posInflight = new Set(); // 쓰기 시작했지만 아직 안 끝난 저장 — flushPositions가 끝날 때까지 기다린다
 export function savePos(docId, patch, { immediate = false } = {}) {
   const prev = state.pos.get(docId);
   const rec = stamp({ docId, ...prev, ...patch }, prev);
   state.pos.set(docId, rec);
   clearTimeout(posWrites.get(docId));
-  const write = () => { posWrites.delete(docId); db.put('pos', state.pos.get(docId)).catch(() => {}); };
+  const write = () => { posWrites.delete(docId); trackPosWrite(db.put('pos', state.pos.get(docId))); };
   if (immediate) write();
   else posWrites.set(docId, setTimeout(write, 700));
   markChanged('pos');
   return rec;
 }
+function trackPosWrite(promise) {
+  const p = promise.catch(() => {});
+  posInflight.add(p);
+  p.then(() => posInflight.delete(p));
+}
 export async function flushPositions() {
   const pending = [...posWrites.keys()];
   for (const id of pending) clearTimeout(posWrites.get(id));
   posWrites.clear();
-  await db.putMany('pos', pending.map((id) => state.pos.get(id)).filter(Boolean));
+  if (pending.length) trackPosWrite(db.putMany('pos', pending.map((id) => state.pos.get(id)).filter(Boolean)));
+  await Promise.all([...posInflight]);
 }
 
 // ── 하이라이트·메모·책갈피 ──

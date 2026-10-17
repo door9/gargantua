@@ -148,7 +148,9 @@ export class FlowView {
     return g >= this.win.from && (g < this.win.to || (g === this.win.to && this.win.to >= this.book.chars));
   }
 
-  async goTo(loc, { align = 'top', smooth = false } = {}) {
+  // reveal: 목차·찾기 등으로 옮겨 갈 때 펼친 메뉴 밑에 가리지 않게 그만큼 아래에 둔다(읽던 자리를 되살릴 때는 쓰지 않음 —
+  // 메뉴를 편 채 글자 크기를 바꿀 때마다 자리가 밀리게 된다)
+  async goTo(loc, { align = 'top', smooth = false, reveal = false } = {}) {
     const body = this.roots.get(loc.s);
     if (!body) return false;
     const idx = textIndex(body);
@@ -158,8 +160,9 @@ export class FlowView {
       let rect = range ? range.getBoundingClientRect() : null;
       if (!rect || (!rect.width && !rect.height)) rect = body.parentElement.getBoundingClientRect();
       const box = this.el.getBoundingClientRect();
-      const offset = align === 'center' ? box.height * 0.33 : 14;
-      const target = this.el.scrollTop + rect.top - box.top - offset;
+      const ins = reveal ? this.r.overlayInsets() : { top: 0, bottom: 0 };
+      const offset = align === 'center' ? (box.height - ins.top - ins.bottom) * 0.33 : 14;
+      const target = this.el.scrollTop + rect.top - box.top - ins.top - offset;
       this.el.scrollTo({ top: Math.max(0, target), behavior });
     };
     place(smooth ? 'smooth' : 'instant');
@@ -177,14 +180,19 @@ export class FlowView {
   }
 
   scrollByPage(dir) {
-    this.el.scrollBy({ top: dir * (this.el.clientHeight - 60), behavior: 'smooth' });
+    const ins = this.r.overlayInsets();
+    this.el.scrollBy({ top: dir * (this.el.clientHeight - ins.top - ins.bottom - 60), behavior: 'smooth' });
   }
 
+  // 읽어주기: 지금 읽는 문장이 보이게(펼친 메뉴가 덮은 곳은 뺀다)
   scrollRangeIntoView(range) {
     const rect = range.getBoundingClientRect();
     const box = this.el.getBoundingClientRect();
-    if (rect.top >= box.top + 40 && rect.bottom <= box.bottom - 40) return;
-    this.el.scrollTo({ top: this.el.scrollTop + rect.top - box.top - box.height * 0.3, behavior: 'smooth' });
+    const ins = this.r.overlayInsets();
+    const top = box.top + ins.top;
+    const bottom = box.bottom - ins.bottom;
+    if (rect.top >= top + 40 && rect.bottom <= bottom - 40) return;
+    this.el.scrollTo({ top: this.el.scrollTop + rect.top - top - (bottom - top) * 0.3, behavior: 'smooth' });
   }
 
   relayout(given = null) {

@@ -2,7 +2,7 @@
 import { h, esc, fmtDateTime, fmtBytes, fmtMinutes, fmtCount, copyText, toast, downloadBlob, snippetAround, clamp, sleep } from '../util.js';
 import { ico } from '../icons.js';
 import { sheet, menu, promptDialog, infoButton } from '../ui/overlay.js';
-import { state, saveAnn, saveDoc, READER_DEFAULTS, readingSpeed, getFile } from '../store.js';
+import { state, saveAnn, saveDoc, setReader, READER_DEFAULTS, readingSpeed, getFile } from '../store.js';
 import { toGlobal, fromGlobal, chapterAt } from './chapters.js';
 import { pdfOutline } from '../pdfdoc.js';
 import { noteEditor, citeText, noteHtml } from './actions.js';
@@ -337,7 +337,7 @@ function startSpeech(r) {
   const setRate = (v) => {
     r.tts.rate = clamp(+(v).toFixed(1), 0.6, 2.4);
     rateOut.textContent = `${r.tts.rate.toFixed(1)}×`;
-    state.reader.ttsRate = r.tts.rate;
+    setReader({ ttsRate: r.tts.rate }); // 다음에 읽어줄 때도 이 속도로(예전에는 저장되지 않았다)
   };
   const bar = h('div', { class: 'tts-bar' },
     h('span', { class: 'tts-label', html: `${ico('speaker')} 읽어주기` }),

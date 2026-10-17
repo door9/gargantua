@@ -2,8 +2,8 @@
 import { h, esc, debounce, throttle, sleep, toast, copyText, now, uid, emit, on, fmtMinutes, clamp } from '../util.js';
 import { ico } from '../icons.js';
 import {
-  state, saveAnn, removeAnn, restoreAnn, savePos, liveAnns, setReader, setDocReader, readerFor, addReadingTime, addReadingProgress,
-  readingSpeed, flushPositions, getFile, saveDoc,
+  state, saveAnn, removeAnn, restoreAnn, savePos, liveAnns, setDocReader, setApp, readerFor, addReadingTime, addReadingProgress,
+  readingSpeed, flushPositions, flushStats, getFile,
 } from '../store.js';
 import { loadBook, loadResources, requireFile, loadPdfTexts } from '../docs.js';
 import { openPdf, pdfOutline, closePdf } from '../pdfdoc.js';
@@ -79,8 +79,9 @@ class Reader {
       if (this.isPdf) await this.loadPdf(); else await this.loadText();
       if (!this.alive) return;
       await this.mountView(this.initialView(), { loc: this.initialLoc(), fresh: true });
+      // 연 시각은 읽던 위치 기록(pos)에만 남긴다 — 문서 기록에 찍으면 아직 동기화 전인 기기에서 열기만 해도
+      // 문서 기록이 '더 최근'이 되어 다른 기기에서 바꾼 이름을 옛 이름으로 되돌렸다
       this.pos = savePos(this.doc.id, { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') });
-      saveDoc({ id: this.doc.id, lastOpenedAt: now() }, { silent: true }).catch(() => {});
       this.setLoading(null);
       this.startTimers();
       this.bindGlobal();
@@ -375,6 +376,8 @@ class Reader {
   updateChapBar() {
     const bar = this.chapBar;
     const showable = (this.isPdf && this.mode === 'random') || (!this.isPdf && this.view?.kind === 'flow' && this.mode !== 'full');
+    // 넓은 화면은 장 막대 자리도 비워 둔다(본문 위에 겹치지 않게)
+    this.root.classList.toggle('chap-on', showable);
     if (!showable) { bar.hidden = true; return; }
     bar.hidden = this.collapsed;
     bar.textContent = '';
@@ -497,6 +500,7 @@ class Reader {
     } else {
       this.pgInfo.hidden = true;
     }
+    this.root.classList.toggle('pg-on', !this.pgInfo.hidden);
     if (this.isPdf && this.mode === 'random') this.updateChapBar();
   }
 
@@ -510,6 +514,14 @@ class Reader {
 
   toggleChrome() {
     this.setCollapsed(!this.collapsed);
+  }
+
+  // 펼친 위쪽 메뉴·아래 정보 줄이 본문 칸을 덮고 있는 높이(본문 칸은 그대로이고 메뉴가 위에 겹쳐 뜬다)
+  overlayInsets() {
+    const main = this.main.getBoundingClientRect();
+    const top = Math.max(0, this.top.getBoundingClientRect().bottom - main.top);
+    const bottom = this.foot.offsetParent ? Math.max(0, main.bottom - this.foot.getBoundingClientRect().top) : 0;
+    return { top, bottom };
   }
 
   // ── 하이라이트 ──
@@ -1012,8 +1024,9 @@ class Reader {
   // 위치로 가기. divided:true면 안드로이드처럼 장 단위 보기로 그 장을 연다
   async goToLoc(loc, { flash = false, divided = false, align = 'top', range = null } = {}) {
     if (!loc) return;
+    // reveal: 옮겨 간 곳이 펼친 메뉴 밑에 가리지 않게(읽던 자리를 되살릴 때는 쓰지 않는다)
     if (this.isPdf) {
-      await this.view.goTo(loc, { align });
+      await this.view.goTo(loc, { align, reveal: true });
       if (flash && loc.start != null) {
         await sleep(60);
         this.flash(this.view.rangeAt(loc.p, loc.start, loc.end ?? loc.start + 1));
@@ -1037,7 +1050,7 @@ class Reader {
         }
       }
     }
-    await this.view.goTo(loc, { align });
+    await this.view.goTo(loc, { align, reveal: true });
     if (flash) {
       await sleep(50);
       const r = range || (loc.end != null ? this.view.rangeAt(loc.s, loc.o, loc.end) : null);
@@ -1253,7 +1266,7 @@ class Reader {
     this.root.classList.toggle('with-side', open);
     this.panelBtn.classList.toggle('on', open);
     if (open) panels.renderSide(this);
-    state.app.readerPanel = open;
+    if (!!state.app.readerPanel !== open) setApp({ readerPanel: open });
     setTimeout(() => this.view?.relayout?.(), 50);
   }
 
@@ -1304,8 +1317,9 @@ class Reader {
     }
   }
 
+  // PDF 확대는 그 문서에만(예전에는 모든 문서의 기본값에 들어가 다른 PDF까지 크게 열렸다)
   setPdfZoom(z) {
-    setReader({ pdfZoom: z });
+    setDocReader(this.doc.id, { pdfZoom: z });
   }
 
   // ── 타이머·키보드 ──
@@ -1383,6 +1397,7 @@ class Reader {
     const loc = this.view?.currentLoc();
     if (loc) this.savePosition(loc, { force: true });
     flushPositions().catch(() => {});
+    flushStats();
     emit('flush-request');
   }
 
