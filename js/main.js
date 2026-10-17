@@ -7,10 +7,12 @@ import { handlePopState, closeAllOverlays, whenHistorySettled, overlayCount } fr
 import { openReader, closeReader, currentReader } from './reader/index.js';
 import { importFiles } from './docs.js';
 import { initSync } from './sync/sync.js';
+import { warm as warmDropbox } from './sync/dropbox.js';
+import { runGate, closeGate, resumeGate } from './ui/bootgate.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '79382f9188';
+export const BUILD = 'b2627197de';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -278,6 +280,7 @@ async function boot() {
   document.getElementById('sprite').innerHTML = iconSprite();
   try {
     await openDb();
+    warmDropbox(); // 기기 자료를 읽는 동안 Dropbox 접속 허가를 미리
     await initStore();
   } catch (e) {
     document.getElementById('boot').innerHTML = `<div style="padding:24px;max-width:420px;text-align:center"><h2>저장소를 열 수 없습니다</h2><p>${String(e?.message || e)}</p></div>`;
@@ -301,9 +304,11 @@ async function boot() {
   } else {
     history.replaceState({ g: 'route' }, '', start);
   }
+  // Dropbox에 연결돼 있으면 다른 기기의 변경을 받은 뒤에 연다(로딩 화면) — 읽던 문서도 최신 자리로 열린다
+  try { await initSync(); } catch (e) { console.warn(e); }
+  await runGate('start');
   await route();
-  document.getElementById('boot').classList.add('done');
-  setTimeout(() => document.getElementById('boot')?.remove(), 400);
+  closeGate();
   // 화면 부품을 지금 판으로 모두 불러 둔 뒤에 새 버전을 살핀다(새 서비스워커는 곧바로 새 파일을 내주므로
   // 나중에 처음 여는 화면이 새 판 부품이 되어 옛 부품과 섞이지 않게)
   await Promise.all(Object.values(VIEWS).map((v) => v.load().catch(() => null)));
@@ -314,7 +319,8 @@ async function boot() {
   on('info', refreshSoon);
   on('rev', () => updateNav());
   on('remote-applied', refreshSoon);
-  initSync().catch((e) => console.warn(e));
+  // 1분 넘게 가려져 있다 돌아오면 받기가 끝날 때까지 덮고, 받은 것으로 화면을 다시 그린 뒤 걷는다
+  on('app-resume', ({ away }) => resumeGate(away, () => { refreshSoon.cancel(); refreshView(); updateNav(); }));
   const params = new URLSearchParams(location.search);
   if (params.has('share') || params.has('open')) {
     history.replaceState(history.state, '', location.pathname + location.hash);

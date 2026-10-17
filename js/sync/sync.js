@@ -40,6 +40,40 @@ let syncedSeq = 0;
 let remoteRev = null;
 let lastSyncAt = 0;
 let blockedByNewer = false;
+let connected = false;
+
+// ── 최신 여부 ──
+// 켠 때와 30초 넘게 가려졌다 돌아온 때(staleMark)부터, 그 뒤에 시작한 받기를 마치기 전까지는 다른 기기의 변경을 아직 못 받은 상태다.
+// 그사이 옛 자리로 문서를 열거나 옛 메모를 고치면 다른 기기에서 더 읽은 자리·고친 메모를 덮는다 —
+// 로딩 화면(ui/bootgate.js)이 받기가 끝날 때까지 덮고, 읽기 화면은 받기가 끝날 때까지 읽던 자리 쓰기를 미룬다
+let staleMark = Date.now();
+let freshFrom = 0; // 마지막으로 마친 받기를 시작한 시각
+let pullStartedAt = 0; // 지금 도는 동기화의 받기를 시작한 시각(아직이면 0)
+let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
+const freshWaiters = new Set();
+
+export const isStale = () => connected && freshFrom < staleMark;
+
+// since 뒤에 시작한 받기를 마치면 true, 그 받기가 실패하거나(오프라인 포함) 연결이 없으면 false
+export function whenFresh(since = staleMark) {
+  if (!connected) return Promise.resolve(false);
+  if (freshFrom >= since) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    freshWaiters.add({ since, resolve });
+    // 도는 동기화가 아직 받기 전이면 그것을 기다리고, 이미 받기를 지났으면 한 번 더 돌게 한다
+    if (!running || (pullStartedAt && pullStartedAt < since)) syncNow({ reason: 'fresh' });
+  });
+}
+
+function settleFresh(t, ok) {
+  if (ok) freshFrom = Math.max(freshFrom, t);
+  for (const w of [...freshWaiters]) {
+    if (w.since <= t) { freshWaiters.delete(w); w.resolve(ok); }
+  }
+}
+
+// 받는 단계(로딩 화면의 안내 글귀용)
+const stage = (name) => emit('sync-stage', { stage: name });
 
 export async function initSync() {
   syncedSeq = (await kvGet('syncedSeq', 0)) || 0;
@@ -50,11 +84,13 @@ export async function initSync() {
   } catch (e) {
     setStatus({ state: 'error', label: e.message, error: e.message });
   }
-  if (!(await dbx.isConnected())) {
+  connected = await dbx.isConnected();
+  if (!connected) {
     setStatus({ state: 'off', label: 'Dropbox 연결 안 됨' });
   } else {
     setStatus({ state: 'idle', label: lastSyncAt ? '동기화됨' : '동기화 대기', lastSync: lastSyncAt });
-    setTimeout(() => syncNow({ reason: 'start' }), 1200);
+    // 곧바로 받는다 — 켤 때 로딩 화면이 이 받기가 끝나기를 기다린다
+    syncNow({ reason: 'start' });
   }
   const soon = debounce(() => syncNow({ reason: 'change' }), 6000);
   // 읽던 위치만 바뀐 것은 3분에 한 번(나갈 때는 바로) — 계속 읽는 중에도 미뤄지기만 하지 않게 첫 변경부터 잰다
@@ -73,15 +109,28 @@ export async function initSync() {
   });
   on('sync-done', () => { firstDirtyAt = 0; });
   on('flush-request', () => { if (isDirty()) syncNow({ reason: 'flush' }); });
-  on('dbx-connected', () => { remoteFiles = null; syncNow({ reason: 'connect', force: true }); });
+  on('dbx-connected', () => { connected = true; remoteFiles = null; syncNow({ reason: 'connect', force: true }); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
       if (isDirty() || state.statsDirty) syncNow({ reason: 'hide' });
-    } else if (Date.now() - lastSyncAt > 30000) {
-      syncNow({ reason: 'show' });
+      return;
     }
+    const away = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    // 30초 넘게 가려져 있었으면 그동안의 다른 기기 변경을 받기 전까지는 최신이 아니다(__gTest: 시험이 짧게 줄인다)
+    const staleAway = away > (globalThis.__gTest?.staleMs ?? 30000);
+    if (staleAway) staleMark = Date.now();
+    if (connected && (staleAway || Date.now() - lastSyncAt > 30000)) syncNow({ reason: 'show' });
+    // 받기를 먼저 시작한 뒤에 알린다(로딩 화면이 그 받기를 기다리게 — 따로 한 번 더 돌지 않게)
+    emit('app-resume', { away });
   });
   addEventListener('online', () => syncNow({ reason: 'online' }));
+  // PC: 다른 창을 눌렀다 이 창으로 돌아오면(가려지지 않아 위의 '돌아옴'이 없다) 30초가 지났으면 받는다 —
+  // 그사이 휴대폰에서 더 읽었으면 열린 문서가 그 자리로 따라간다
+  addEventListener('focus', () => {
+    if (connected && document.visibilityState === 'visible' && Date.now() - lastSyncAt > 30000) syncNow({ reason: 'focus' });
+  });
   setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - lastSyncAt > 5 * 60000) syncNow({ reason: 'interval' }); }, 60000);
 }
 
@@ -133,18 +182,37 @@ function payload() {
 }
 
 async function doSync({ reason = '', force = false } = {}) {
-  if (!(await dbx.isConnected())) { setStatus({ state: 'off', label: 'Dropbox 연결 안 됨' }); return; }
-  if (!navigator.onLine) { setStatus({ state: 'idle', label: '오프라인 — 연결되면 동기화' }); return; }
+  pullStartedAt = 0;
+  if (!(await dbx.isConnected())) {
+    connected = false;
+    setStatus({ state: 'off', label: 'Dropbox 연결 안 됨' });
+    settleFresh(Infinity, false);
+    return;
+  }
+  connected = true; // 설정 화면에서 막 연결한 때도
+  if (!navigator.onLine) {
+    setStatus({ state: 'idle', label: '오프라인 — 연결되면 동기화' });
+    settleFresh(Date.now(), false);
+    return;
+  }
   setStatus({ state: 'busy', label: '동기화 중' });
+  let pulled = false;
+  let started = Date.now();
   try {
-    if (!legacyChecked) {
-      try { await checkLegacy(); legacyChecked = true; } catch (e) { console.warn('옛 자리 살피기 실패', e); }
-    }
     let uploaded = false;
     for (let attempt = 0; attempt < 4; attempt++) {
-      const m = await dbx.meta(REMOTE);
+      started = Date.now();
+      if (!pulled) pullStartedAt = started;
+      stage('check');
+      let m = await dbx.meta(REMOTE);
+      // 아직 옛 자리(/web)에서 옮겨 오지 않은 Dropbox면 먼저 옮긴다(옮긴 기록을 받아야 하므로)
+      if (!m && !legacyChecked) {
+        try { await checkLegacy(); legacyChecked = true; } catch (e) { console.warn('옛 자리 살피기 실패', e); }
+        m = await dbx.meta(REMOTE);
+      }
       let needUpload = false;
       if (m && (m.rev !== remoteRev || force)) {
+        stage('download');
         const got = await dbx.download(REMOTE);
         const data = got ? await decodePayload(got.blob) : null;
         if (data) {
@@ -153,6 +221,7 @@ async function doSync({ reason = '', force = false } = {}) {
             blockedByNewer = true;
             throw new Error('더 새 버전의 Gargantua가 쓴 기록입니다. 앱을 새로 고쳐 주세요.');
           }
+          stage('apply');
           const res = await applyRemote(data);
           needUpload = res.needUpload;
         }
@@ -163,6 +232,8 @@ async function doSync({ reason = '', force = false } = {}) {
         remoteRev = null;
         needUpload = true;
       }
+      // 받은 것이 기기와 화면에 들어갔다 — 로딩 화면은 여기서 걷는다(올리기는 뒤에서)
+      if (!pulled) { pulled = true; settleFresh(started, true); }
       if (!needUpload && !isDirty() && !state.statsDirty) break;
       const seq = state.changeSeq;
       const body = await encodePayload(payload());
@@ -180,6 +251,11 @@ async function doSync({ reason = '', force = false } = {}) {
         throw e;
       }
     }
+    // 옛 자리(/web) 살피기는 받기·올리기 뒤에(로딩 화면이 기다리지 않게) — 세션마다 한 번.
+    // 옛 판이 써 둔 서재를 합쳤으면 곧바로 한 번 더 돌아 올린다
+    if (!legacyChecked) {
+      try { if (await checkLegacy()) again = true; legacyChecked = true; } catch (e) { console.warn('옛 자리 살피기 실패', e); }
+    }
     const fileProblem = await uploadMissingFiles();
     try { await dailySnapshot(); } catch (e) { console.warn('날짜별 사본 실패', e); }
     lastSyncAt = Date.now();
@@ -190,6 +266,8 @@ async function doSync({ reason = '', force = false } = {}) {
     setTimeout(() => keepLocal().catch(() => {}), 1500);
   } catch (e) {
     console.warn('동기화 실패', e);
+    // 받기를 마치지 못했다 — 기다리던 쪽(로딩 화면·읽기 화면)은 이 기기 자료로 이어 간다
+    if (!pulled) settleFresh(started, false);
     const msg = e?.message || String(e);
     if (e instanceof dbx.DbxError && e.auth) setStatus({ state: 'error', label: '다시 연결이 필요합니다', error: msg });
     else if (e instanceof dbx.DbxError && e.status === 0) setStatus({ state: 'idle', label: '오프라인 — 연결되면 동기화', error: '' });
@@ -217,13 +295,16 @@ async function checkLegacy() {
     await dbx.upload(LEGACY_REMOTE, new Blob([JSON.stringify({ app: APP_ID, schema: 2, movedTo: REMOTE })]), { mode: 'add' });
     return;
   }
+  let merged = false;
   if (data && APP_IDS.includes(data.app) && (data.schema || 1) <= SCHEMA) {
     await applyRemote(data);
     state.changeSeq += 1;
     await kvSet('changeSeq', state.changeSeq);
+    merged = true;
   }
   const t = new Date();
   await dbx.move(LEGACY_DIR, `/old/web-${dayKey(t).replaceAll('-', '')}-${t.toTimeString().slice(0, 8).replaceAll(':', '')}`, { autorename: true });
+  return merged;
 }
 
 // 다른 기기의 기록 합치기
@@ -318,7 +399,8 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
     }
   }
   if (changed) {
-    emit('remote-applied', {});
+    // pos: 다른 기기의 읽던 자리가 들어온 문서 — 열려 있으면 그 자리로 따라간다(reader/index.js)
+    emit('remote-applied', { pos: putPos.map((r) => r.docId) });
     emit('docs', {});
     emit('anns', {});
   }
@@ -435,6 +517,8 @@ export async function connectedAccount() {
 
 export async function disconnectDropbox() {
   await dbx.disconnect();
+  connected = false;
+  settleFresh(Infinity, false);
   remoteRev = null;
   remoteFiles = null;
   await kvSet('remoteRev', null);

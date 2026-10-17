@@ -109,7 +109,20 @@ export async function disconnect() {
   await kvDel('dbx');
 }
 
-async function refreshToken() {
+// 접속 허가 새로 받기 — 켤 때 미리 받기(warm)와 첫 요청이 겹쳐도 한 번만 받는다
+let refreshing = null;
+function refreshToken() {
+  refreshing ||= fetchNewToken().finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+// 켜자마자(기기 자료를 읽는 동안) 접속 허가를 미리 새로 받아 둔다 — 4시간마다 끝나는 허가 때문에
+// 첫 받기가 한 번 더 오가며 로딩 화면이 길어지지 않게
+export function warm() {
+  return loadTok().then((t) => (t?.refresh ? accessToken() : null)).catch(() => null);
+}
+
+async function fetchNewToken() {
   const t = await loadTok();
   if (!t?.refresh) throw new DbxError('Dropbox에 연결되어 있지 않습니다.', { auth: true });
   let res;

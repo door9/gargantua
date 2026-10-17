@@ -83,6 +83,9 @@ export class FlowView {
   }
 
   handleScroll() {
+    // 자리로 가는 중(goTo가 글이 다 그려질 때까지 세 번 맞춘다)의 스크롤은 읽은 것이 아니다 —
+    // 덜 그려진 순간의 엉뚱한 자리가 '읽던 자리'로 저장됐다
+    if (this.settling) { this.lastTop = this.el.scrollTop; return; }
     const top = this.el.scrollTop;
     const dir = top > this.lastTop + 3 ? 'down' : top < this.lastTop - 3 ? 'up' : null;
     this.lastTop = top;
@@ -165,14 +168,21 @@ export class FlowView {
       const target = this.el.scrollTop + rect.top - box.top - ins.top - offset;
       this.el.scrollTo({ top: Math.max(0, target), behavior });
     };
-    place(smooth ? 'smooth' : 'instant');
-    if (!smooth) {
-      await sleep(40);
-      place('instant');
-      await sleep(140);
-      place('instant');
-    } else {
-      await sleep(450);
+    this.settling = true;
+    try {
+      place(smooth ? 'smooth' : 'instant');
+      if (!smooth) {
+        await sleep(40);
+        place('instant');
+        await sleep(140);
+        place('instant');
+      } else {
+        await sleep(450);
+      }
+      // 마지막으로 맞춘 스크롤 소식까지 흘려보낸다(화면이 가려져 있어도 멈추지 않게 그림 차례 대신 시간으로)
+      await sleep(30);
+    } finally {
+      this.settling = false;
     }
     this.lastTop = this.el.scrollTop;
     this.lastLoc = { s: loc.s, o };

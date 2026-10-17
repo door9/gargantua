@@ -17,7 +17,7 @@ import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from '.
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
 import { lookupMenu, citeText, noteEditor, tagsOf, shareQuoteCard } from './actions.js';
-import { fetchRemoteFile } from '../sync/sync.js';
+import { fetchRemoteFile, isStale, whenFresh } from '../sync/sync.js';
 
 export const COLORS = [
   { name: '노랑', key: 'yellow' },
@@ -63,6 +63,8 @@ class Reader {
     this.offs = [];
     this.alive = true;
     this.res = { urls: new Map(), revoke() {} };
+    this.holdPos = false; // 다른 기기의 변경을 받기 전 — 읽던 자리를 쓰지 않고 모아 둔다(holdUntilFresh)
+    this.heldPatch = null;
   }
 
   // ── 시작 ──
@@ -74,14 +76,20 @@ class Reader {
     document.body.classList.add('reading');
     this.setLoading('여는 중');
     try {
-      const pos = state.pos.get(this.doc.id) || {};
-      this.pos = pos;
+      this.pos = state.pos.get(this.doc.id) || {};
       if (this.isPdf) await this.loadPdf(); else await this.loadText();
       if (!this.alive) return;
+      // 켠 뒤·오래 가렸다 돌아온 뒤 다른 기기의 변경을 아직 받지 못했으면(로딩 화면을 건너뛴 때 등) 받기가 끝날 때까지
+      // 읽던 자리를 쓰지 않는다 — 옛 자리를 '방금 연 자리'로 찍어 다른 기기에서 더 읽은 자리를 덮지 않게
+      this.holdPos = isStale();
+      this.pos = state.pos.get(this.doc.id) || {};
+      this.openedFrom = this.pos;
       await this.mountView(this.initialView(), { loc: this.initialLoc(), fresh: true });
       // 연 시각은 읽던 위치 기록(pos)에만 남긴다 — 문서 기록에 찍으면 아직 동기화 전인 기기에서 열기만 해도
       // 문서 기록이 '더 최근'이 되어 다른 기기에서 바꾼 이름을 옛 이름으로 되돌렸다
-      this.pos = savePos(this.doc.id, { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') });
+      this.openedPatch = { openedAt: now(), view: this.view.kind === 'paged' ? 'paged' : (this.isPdf ? 'pdf' : 'flow') };
+      if (this.holdPos) this.holdUntilFresh();
+      else this.writePos(this.openedPatch);
       this.setLoading(null);
       this.startTimers();
       this.bindGlobal();
@@ -113,11 +121,89 @@ class Reader {
 
   initialLoc() {
     if (this.opts.loc) return this.opts.loc;
-    const p = this.pos;
+    return this.locOf(this.pos);
+  }
+
+  // 읽던 자리 기록 → 화면 위치
+  locOf(p) {
     if (this.isPdf) return { p: p.p || 0, y: p.y || 0 };
     if (Number.isInteger(p.s)) return { s: Math.min(p.s, this.book.sections.length - 1), o: p.o || 0 };
     if (p.progress) return fromGlobal(this.book, Math.floor(p.progress * this.book.chars));
     return { s: 0, o: 0 };
+  }
+
+  // 두 읽던 자리 기록이 눈에 띄게 다른가(같은 구획 300자 안·PDF는 같은 쪽 15% 안이면 같은 곳으로 본다)
+  farFrom(a, b) {
+    if (!a || !b) return !!a;
+    if (this.isPdf) return (a.p || 0) !== (b.p || 0) || Math.abs((a.y || 0) - (b.y || 0)) > 0.15;
+    if (Number.isInteger(a.s) && Number.isInteger(b.s)) return a.s !== b.s || Math.abs((a.o || 0) - (b.o || 0)) > 300;
+    return Math.abs((a.progress || 0) - (b.progress || 0)) > 0.005;
+  }
+
+  // 읽던 자리 쓰기 — 다른 기기의 변경을 받기 전이면 쓰지 않고 모아 둔다(화면 쪽 값만 바꾼다)
+  writePos(patch, { immediate = false } = {}) {
+    if (this.holdPos) {
+      this.heldPatch = { ...this.heldPatch, ...patch };
+      this.pos = { ...this.pos, ...patch };
+      return this.pos;
+    }
+    this.pos = savePos(this.doc.id, patch, { immediate });
+    return this.pos;
+  }
+
+  // 받기가 끝나면(실패·1분이 지나도) 모아 둔 자리를 쓴다. 그사이 다른 기기에서 더 읽은 자리가 들어왔으면 —
+  // 여기서 움직이지 않았으면 그리로 옮기고(되돌리기 가능), 이미 읽어 나갔으면 이 자리를 지키고 그 자리로 갈 단추만 띄운다
+  async holdUntilFresh() {
+    const ok = await Promise.race([whenFresh(), sleep(60000).then(() => false)]);
+    if (!this.alive) return;
+    const opened = this.openedPatch;
+    const openedFrom = this.openedFrom;
+    const held = this.heldPatch || {};
+    const before = this.view?.currentLoc();
+    this.holdPos = false;
+    this.heldPatch = null;
+    const remote = state.pos.get(this.doc.id);
+    const moved = this.heldMoved(held);
+    // 받은 자리(이 기기가 나가며 써 둔 것은 빼고)가 연 자리와 다르면 다른 기기에서 더 읽은 것
+    const there = ok && remote && remote !== openedFrom && remote !== this.heldRec && this.farFrom(remote, openedFrom) ? this.locOf(remote) : null;
+    if (there && !moved) {
+      // 받은 자리를 그대로 두고(모아 둔 자리 칸은 버린다) 연 시각·보기만 더한다
+      const meta = Object.fromEntries(Object.entries(held).filter(([k]) => !['s', 'o', 'p', 'y', 'progress'].includes(k)));
+      this.pos = remote;
+      this.writePos({ ...meta, ...opened });
+      await this.followTo(there, before);
+      return;
+    }
+    this.writePos({ ...held, ...opened });
+    if (there && this.mode !== 'random') toast('다른 기기에서 더 읽은 자리가 있습니다.', { action: '그 자리로', duration: 8000, onAction: () => this.goToLoc(there) });
+  }
+
+  // 연 자리에서 실제로 읽어 나갔나(처음 자리로 가며 난 스크롤 같은 것은 아님)
+  heldMoved(held) {
+    return ('s' in held || 'p' in held) && this.farFrom({ ...this.openedFrom, ...held }, this.openedFrom);
+  }
+
+  // 받기가 끝나기 전에 나가거나 닫을 때 — 연 자리에서 실제로 읽어 나갔으면 그 자리는 써 둔다(이 기기에서 가장 최근에 읽은 곳).
+  // 그대로 두면 앱이 닫히며 읽은 만큼이 사라진다
+  commitHeld() {
+    if (!this.holdPos || !this.heldPatch || !this.heldMoved(this.heldPatch)) return;
+    this.heldRec = savePos(this.doc.id, { ...this.heldPatch, ...this.openedPatch }, { immediate: true });
+  }
+
+  // 다른 기기에서 이 문서를 더 최근에 읽었다(그 자리가 들어왔다) — 그리로 따라간다
+  followRemote() {
+    if (this.holdPos || !this.view) return;
+    const remote = state.pos.get(this.doc.id);
+    const mine = this.pos;
+    if (!remote || remote === mine || (remote.updatedAt || 0) <= (mine?.updatedAt || 0)) return;
+    const here = this.view.currentLoc();
+    this.pos = remote;
+    if (this.farFrom(remote, mine)) this.followTo(this.locOf(remote), here);
+  }
+
+  async followTo(loc, before) {
+    await this.goToLoc(loc, { rest: true });
+    toast('다른 기기에서 읽던 자리로 옮겼습니다.', { action: '되돌리기', duration: 6000, onAction: () => { if (before) this.goToLoc(before); } });
   }
 
   async loadText() {
@@ -255,6 +341,8 @@ class Reader {
     this.updateBookmarkBtn();
     setTimeout(() => {
       const l = this.view?.currentLoc();
+      // 연 자리에 맞춘 화면이 멈춘 곳 — 여기서 움직이지 않았으면 읽던 자리를 다시 쓰지 않는다(savePosition)
+      this.restLoc = l;
       if (l) this.onLocate(l, { initial: true });
     }, 250);
   }
@@ -290,14 +378,14 @@ class Reader {
     await sleep(10);
     await this.mountView(kind, { loc, fresh: false });
     this.setLoading(null);
-    this.pos = savePos(this.doc.id, { view: kind, viewPick: true });
+    this.writePos({ view: kind, viewPick: true });
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
   }
 
   async setMode(mode) {
     if (this.isPdf) {
       this.mode = mode;
-      this.pos = savePos(this.doc.id, { mode });
+      this.writePos({ mode });
       if (mode === 'random') await this.pdfRandom({});
       this.updateChapBar();
       return;
@@ -307,7 +395,7 @@ class Reader {
     const loc = this.view.currentLoc();
     const prevMode = this.mode;
     this.mode = mode;
-    this.pos = savePos(this.doc.id, { mode });
+    this.writePos({ mode });
     await this.renderFlowMode(loc, { fresh: mode === 'random' && prevMode !== 'random' });
     if (mode === 'random' && prevMode === 'random') {
       // 무작위 → 다른 장
@@ -318,7 +406,7 @@ class Reader {
     if (this.isPdf) return this.pdfRandom({});
     if (this.view.kind !== 'flow' || this.mode !== 'random') {
       this.mode = 'random';
-      this.pos = savePos(this.doc.id, { mode: 'random' });
+      this.writePos({ mode: 'random' });
       if (this.view.kind !== 'flow') await this.setView('flow');
     }
     this.chapterIndex = randomChapter(this.chapters, this.chapterIndex ?? -1);
@@ -470,7 +558,17 @@ class Reader {
     patch.progress = progress ?? this.progress ?? 0;
     if (patch.progress >= 0.995 && !this.pos.finishedAt) patch.finishedAt = now();
     patch.mode = this.mode;
-    this.pos = savePos(this.doc.id, patch, { immediate: force });
+    // 자리가 그대로면 쓰지 않는다 — 열어만 둔 휴대폰이 꺼질 때(나갈 때 저장)마다 옛 자리가 '방금 읽은 자리'로 찍혀
+    // 다른 기기에서 더 읽은 자리를 덮었다. 기록에 맞춰 놓은 화면이 그대로인 것(restLoc)도 그대로로 본다(한 줄 안 차이)
+    if (!patch.finishedAt && patch.mode === this.pos.mode
+      && (this.samePlace(patch, this.pos) || (this.restLoc && this.samePlace(patch, this.restLoc)))) return;
+    this.restLoc = null;
+    this.writePos(patch, { immediate: force });
+  }
+
+  samePlace(a, b) {
+    if (this.isPdf) return a.p === b.p && Math.abs((a.y || 0) - (b.y || 0)) < 0.01;
+    return a.s === b.s && Math.abs((a.o || 0) - (b.o || 0)) < 40;
   }
 
   trackSpeed(g) {
@@ -1022,7 +1120,8 @@ class Reader {
   }
 
   // 위치로 가기. divided:true면 안드로이드처럼 장 단위 보기로 그 장을 연다
-  async goToLoc(loc, { flash = false, divided = false, align = 'top', range = null } = {}) {
+  // rest: 받은 읽던 자리로 옮기는 것 — 옮긴 화면이 멈춘 곳을 그 기록의 자리로 보고 다시 쓰지 않는다
+  async goToLoc(loc, { flash = false, divided = false, align = 'top', range = null, rest = false } = {}) {
     if (!loc) return;
     // reveal: 옮겨 간 곳이 펼친 메뉴 밑에 가리지 않게(읽던 자리를 되살릴 때는 쓰지 않는다)
     if (this.isPdf) {
@@ -1031,14 +1130,16 @@ class Reader {
         await sleep(60);
         this.flash(this.view.rangeAt(loc.p, loc.start, loc.end ?? loc.start + 1));
       }
-      this.onLocate(this.view.currentLoc(), {});
+      const l = this.view.currentLoc();
+      if (rest) this.restLoc = l;
+      this.onLocate(l, {});
       return;
     }
     if (this.view.kind === 'flow') {
       const g = toGlobal(this.book, loc.s, loc.o);
       if (divided && this.mode === 'full' && this.chapters.length > 1) {
         this.mode = 'divided';
-        this.pos = savePos(this.doc.id, { mode: 'divided' });
+        this.writePos({ mode: 'divided' });
       }
       if (this.mode !== 'full') {
         const ci = chapterAt(this.chapters, g);
@@ -1057,6 +1158,7 @@ class Reader {
       if (r) this.flash(r);
     }
     const l = this.view.currentLoc();
+    if (rest) this.restLoc = l;
     if (l) this.onLocate(l, {});
   }
 
@@ -1350,10 +1452,11 @@ class Reader {
       () => document.removeEventListener('visibilitychange', onVis),
       () => window.removeEventListener('resize', onResize),
       on('anns', (d) => { if (!d || d.docId === this.doc.id) this.refreshAnns(); }),
-      on('remote-applied', () => {
+      on('remote-applied', (d) => {
         // 다른 기기에서 이 문서를 지웠으면 닫는다
         if (state.docs.get(this.doc.id)?.deleted) { toast('다른 기기에서 이 문서를 서재에서 지웠습니다.'); history.back(); return; }
         this.refreshAnns();
+        if (d?.pos?.includes(this.doc.id)) this.followRemote();
       }),
     );
   }
@@ -1396,6 +1499,7 @@ class Reader {
   flush() {
     const loc = this.view?.currentLoc();
     if (loc) this.savePosition(loc, { force: true });
+    this.commitHeld();
     flushPositions().catch(() => {});
     flushStats();
     emit('flush-request');

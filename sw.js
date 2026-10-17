@@ -1,6 +1,6 @@
 // Gargantua 서비스워커 — 오프라인 열기(앱 파일 + PDF 부품), 공유로 받은 파일 넘기기
 // 같은 주소(door9.github.io)의 다른 앱 캐시를 건드리지 않도록 gargantua- 로 시작하는 것만 정리한다.
-const VERSION = '79382f9188';
+const VERSION = 'b2627197de';
 const CACHE = `gargantua-shell-${VERSION}`;
 const RUNTIME = 'gargantua-runtime-1'; // PDF 부품 — 버전이 바뀌어도 남는다(pdf.js를 바꾸면 이름도 올릴 것)
 
@@ -8,7 +8,7 @@ const RUNTIME = 'gargantua-runtime-1'; // PDF 부품 — 버전이 바뀌어도 
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'manifest-samsung.webmanifest', 'css/app.css', 'css/reader.css',
   'js/manifest-pick.js', 'js/main.js', 'js/util.js', 'js/icons.js', 'js/db.js', 'js/store.js', 'js/text.js', 'js/docs.js', 'js/pdfdoc.js',
-  'js/ui/overlay.js', 'js/ui/numwheel.js', 'js/ui/readerset.js',
+  'js/ui/overlay.js', 'js/ui/numwheel.js', 'js/ui/readerset.js', 'js/ui/bootgate.js',
   'js/parse/common.js', 'js/parse/epub.js', 'js/parse/docx.js', 'js/parse/plain.js', 'js/parse/index.js',
   'js/reader/index.js', 'js/reader/flow.js', 'js/reader/paged.js', 'js/reader/pdfview.js', 'js/reader/painter.js',
   'js/reader/chapters.js', 'js/reader/window.js', 'js/reader/panels.js', 'js/reader/actions.js',
