@@ -191,8 +191,10 @@ input[type="range"] { accent-color: var(--accent); }
 .tag { color: var(--accent); font-weight: 600; }
 
 /* 알림 */
-.gtoast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-b) + 16px); transform: translate(-50%, 20px); max-width: min(92vw, 520px); background: #1C2420; color: #F2EFE6; padding: 11px 16px; border-radius: 12px; box-shadow: var(--shadow-lg); font-size: 14px; display: flex; gap: 14px; align-items: center; opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 300; }
-.gtoast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+/* 알림 — 가운데 맞춤은 좌우 0 + 자동 여백으로(예전 left:50%+당기기는 상자 폭이 화면 절반에 묶여 "쪽을 넘어 하/나로 이었습/니다"처럼 끊겼다).
+   줄을 바꿀 땐 낱말 단위로 */
+.gtoast { position: fixed; left: 0; right: 0; margin: 0 auto; width: max-content; bottom: calc(var(--nav-h) + var(--safe-b) + 16px); transform: translateY(20px); max-width: min(92vw, 520px); background: #1C2420; color: #F2EFE6; padding: 11px 16px; border-radius: 12px; box-shadow: var(--shadow-lg); font-size: 14px; word-break: keep-all; display: flex; gap: 14px; align-items: center; opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 300; }
+.gtoast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .gtoast-action { color: #9FD3B6; font-weight: 700; white-space: nowrap; }
 body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 @media (min-width: 900px) { .gtoast { bottom: 28px; } }

@@ -7,7 +7,7 @@ import {
 } from '../store.js';
 import { loadBook, loadResources, requireFile, loadPdfTexts } from '../docs.js';
 import { openPdf, pdfOutline, closePdf } from '../pdfdoc.js';
-import { textOf, offsetsFromRange, describe, resolveAnchor, caretFromPoint, offsetOfBoundary, rangeFromOffsets, textIndex } from '../text.js';
+import { textOf, offsetsFromRange, describe, resolveAnchor, offsetOfBoundary, textIndex } from '../text.js';
 import { rootFrom } from '../parse/common.js';
 import { FlowView } from './flow.js';
 import { PagedView } from './paged.js';
@@ -781,10 +781,12 @@ class Reader {
     return out;
   }
 
-  async highlightSelection(color, { info } = {}) {
+  // announce: 칠한 뒤 '하이라이트했습니다' 알림(색 단추로 칠할 때)
+  async highlightSelection(color, { info, announce = false } = {}) {
     info = info || this.pending || this.selectionInfo();
     if (!info) return null;
     const overlaps = this.overlapping(info.u, info.start, info.end);
+    const joined = overlaps.length ? null : this.pageJoinCandidate(info, color);
     let result;
     if (overlaps.length) {
       // 겹치는 하이라이트는 하나로 합친다(메모는 이어 붙여 보존)
@@ -795,12 +797,46 @@ class Reader {
       const anchor = this.anchorFor({ ...info, start, end });
       result = await saveAnn({ id: keep.ann.id, color, anchor, note: notes.join('\n\n') || keep.ann.note || '' });
       for (const o of overlaps) if (o.ann.id !== keep.ann.id) await removeAnn(o.ann.id);
+    } else if (joined) {
+      // 쪽을 넘겨 이어 칠한 것 — 맞닿은 하이라이트를 늘려 하나로 잇는다('따로 두기'로 되돌림)
+      const before = { anchor: joined.ann.anchor, color: joined.ann.color };
+      const alone = this.anchorFor(info);
+      const anchor = this.anchorFor({ ...info, start: Math.min(info.start, joined.r.start), end: Math.max(info.end, joined.r.end) });
+      result = await saveAnn({ id: joined.ann.id, color, anchor });
+      toast('쪽을 넘어 하나로 이었습니다.', {
+        action: '따로 두기',
+        duration: 5000,
+        onAction: async () => {
+          await saveAnn({ id: joined.ann.id, ...before });
+          await saveAnn({ id: uid('h'), docId: this.doc.id, kind: 'hl', color, anchor: alone, note: '' });
+          this.refreshAnns();
+        },
+      });
     } else {
       result = await saveAnn({ id: uid('h'), docId: this.doc.id, kind: 'hl', color, anchor: this.anchorFor(info), note: '' });
     }
+    if (announce && !joined) toast('하이라이트했습니다.', { duration: 1000 });
     this.clearSelection();
     this.refreshAnns();
     return result;
+  }
+
+  // 쪽을 넘겨 이어 칠하기(전자책 보기): 고른 글과 쪽 경계를 사이에 두고 맞닿은(사이엔 빈칸뿐) 같은 색 하이라이트.
+  // 쪽을 넘기며 한 번에 고를 수 없어 쪽 끝·다음 쪽 처음을 따로 칠하면 둘로 끊기던 것(2026-10-30 사용자 요청)
+  pageJoinCandidate(info, color) {
+    const view = this.view;
+    if (view?.kind !== 'paged' || !view.pageOfOffset) return null;
+    const text = textOf(info.root);
+    const blank = (a, b) => a <= b && !text.slice(a, b).trim();
+    for (const ann of this.annsOfDoc('hl')) {
+      if ((ann.color || 0) !== color) continue;
+      const r = this.resolve(ann);
+      if (!r || r.u !== info.u) continue;
+      // 앞 쪽 끝에 칠해 둔 것 → 이번 것, 또는 이번 것 → 뒤 쪽 처음에 칠해 둔 것
+      if (blank(r.end, info.start) && view.pageOfOffset(r.end - 1) !== view.pageOfOffset(info.start)) return { ann, r };
+      if (blank(info.end, r.start) && view.pageOfOffset(info.end - 1) !== view.pageOfOffset(r.start)) return { ann, r };
+    }
+    return null;
   }
 
   async noteForSelection() {
@@ -860,7 +896,7 @@ class Reader {
     COLORS.forEach((c, i) => dots.append(h('button', {
       class: `hl-dot c${i}`, 'aria-label': `${c.name} 하이라이트`, title: `${c.name} (${i + 1})`,
       onpointerdown: (e) => e.preventDefault(),
-      onclick: () => { this.highlightSelection(i).then(() => toast('하이라이트했습니다.', { duration: 1000 })); },
+      onclick: () => { this.highlightSelection(i, { announce: true }); },
     })));
     tool.append(dots,
       selBtn('note', '메모', () => this.noteForSelection()),
@@ -940,25 +976,18 @@ class Reader {
     if (this.view?.kind === 'paged') this.toggleChrome();
   }
 
+  // 누른 곳의 하이라이트 — 칠한 글줄 상자 안(조금 넉넉히)을 눌렀으면 그것(겹치면 짧은 것).
+  // 예전엔 누른 점의 글자 사이 위치를 찾아 그 다음 한 글자 상자와만 맞대어, 손가락이 글자 오른쪽 끝·글자 사이에 닿으면
+  // 하이라이트를 눌러도 못 알아보고 메뉴 접기·쪽 넘기기로 빠졌다(줄을 3px마다 눌러 16% 빗나감, 2026-10-30)
   annAtPoint(x, y) {
-    const c = caretFromPoint(x, y);
-    if (!c) return null;
-    const el = c.node.nodeType === 1 ? c.node : c.node.parentElement;
-    const root = el?.closest?.(this.isPdf ? '.textLayer' : '.g-body');
-    if (!root) return null;
-    const u = this.unitForRoot(root);
-    if (u == null) return null;
-    const off = offsetOfBoundary(root, c.node, c.offset);
     let best = null;
     for (const ann of this.annsOfDoc('hl')) {
       const r = this.resolve(ann);
-      if (!r || r.u !== u || off < r.start || off > r.end) continue;
-      // 정말 글자 위를 눌렀는지 확인
-      const probe = rangeFromOffsets(root, Math.max(r.start, Math.min(off, r.end - 1)), Math.max(r.start, Math.min(off, r.end - 1)) + 1);
-      const rects = probe ? [...probe.getClientRects()] : [];
-      const near = rects.some((rc) => x >= rc.left - 6 && x <= rc.right + 6 && y >= rc.top - 6 && y <= rc.bottom + 6);
-      if (!near) continue;
-      if (!best || (r.end - r.start) < (best.r.end - best.r.start)) best = { ann, r };
+      if (!r || !this.view?.roots?.has(r.u)) continue;
+      const range = this.view.rangeAt(r.u, r.start, r.end);
+      if (!range) continue;
+      const hit = [...range.getClientRects()].some((rc) => rc.width > 0 && x >= rc.left - 4 && x <= rc.right + 4 && y >= rc.top - 5 && y <= rc.bottom + 5);
+      if (hit && (!best || (r.end - r.start) < (best.r.end - best.r.start))) best = { ann, r };
     }
     return best?.ann || null;
   }
