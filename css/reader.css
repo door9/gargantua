@@ -1,8 +1,9 @@
-/* 읽기 화면 — 안드로이드 앱의 종이·세피아·야간 색을 그대로 */
+/* 읽기 화면 — 안드로이드 앱의 종이·세피아·야간 색을 그대로.
+   --r-bar(위아래 메뉴 바탕)는 비치지 않게 — 메뉴가 본문 위에 겹쳐 뜨므로 뒤 글자가 흐릿하게 보였다 */
 .app-reader { position: fixed; inset: 0; z-index: 50; }
 .rd {
   --r-bg: #FAF9F5; --r-fg: #20231F; --r-muted: #666B64; --r-link: #28634B; --r-accent: #4A745F;
-  --r-bar: rgba(250, 249, 245, .94); --r-line: rgba(32, 35, 31, .1); --r-chip: rgba(32, 35, 31, .05);
+  --r-bar: #FAF9F5; --r-line: rgba(32, 35, 31, .1); --r-chip: rgba(32, 35, 31, .05);
   --r-find: rgba(255, 224, 130, .55); --r-find-cur: rgba(255, 190, 70, .9);
   --rh0: rgba(255, 224, 120, .85); --rh1: rgba(170, 230, 196, .9); --rh2: rgba(245, 190, 205, .9); --rh3: rgba(180, 214, 244, .92);
   --rfont: var(--serif);
@@ -10,13 +11,13 @@
 }
 .rd.pal-sepia {
   --r-bg: #F2E6CB; --r-fg: #352C20; --r-muted: #736451; --r-link: #775534; --r-accent: #9B7045;
-  --r-bar: rgba(242, 230, 203, .95); --r-line: rgba(53, 44, 32, .12); --r-chip: rgba(53, 44, 32, .06);
+  --r-bar: #F2E6CB; --r-line: rgba(53, 44, 32, .12); --r-chip: rgba(53, 44, 32, .06);
   --r-find: rgba(135, 194, 138, .45); --r-find-cur: rgba(105, 168, 110, .85);
   --rh0: rgba(250, 210, 100, .7); --rh1: rgba(150, 205, 160, .7); --rh2: rgba(230, 160, 170, .62); --rh3: rgba(150, 190, 225, .7);
 }
 .rd.pal-night {
   --r-bg: #131815; --r-fg: #D8DED9; --r-muted: #969F98; --r-link: #8FC5A9; --r-accent: #6C9B81;
-  --r-bar: rgba(19, 24, 21, .95); --r-line: rgba(255, 255, 255, .09); --r-chip: rgba(255, 255, 255, .06);
+  --r-bar: #131815; --r-line: rgba(255, 255, 255, .09); --r-chip: rgba(255, 255, 255, .06);
   --r-find: rgba(79, 118, 93, .55); --r-find-cur: rgba(92, 141, 107, .9);
   --rh0: rgba(150, 125, 40, .62); --rh1: rgba(64, 120, 90, .65); --rh2: rgba(130, 62, 80, .65); --rh3: rgba(60, 95, 128, .7);
   color-scheme: dark;
@@ -25,10 +26,11 @@
 
 /* 위쪽 막대(접고 펴기) — 본문 위에 겹쳐 뜬다('맨 앞으로'). 본문 칸은 접힌 상태 크기로 고정해
    메뉴를 펴고 접어도 글이 밀리거나 전자책 쪽 번호가 바뀌지 않는다. 아래 정보 줄도 같다. */
-.rd { --rd-top-space: calc(var(--safe-t) + 25.5px); --rd-bottom-space: 0px; }
+/* --pg-safe-b: 전자책 보기 아래 여백에 더할 화면 아래 안전 여백(휴대폰은 본문이 화면 끝까지 — 제스처 막대를 비킨다) */
+.rd { --rd-top-space: calc(var(--safe-t) + 25.5px); --rd-bottom-space: 0px; --pg-safe-b: var(--safe-b); }
 @media (min-width: 900px) {
   /* 넓은 화면은 메뉴를 펼친 채 읽으므로 그 자리를 늘 비워 둔다(접어도 칸은 그대로) */
-  .rd { --rd-top-space: calc(var(--safe-t) + 57px); --rd-bottom-space: calc(30px + var(--safe-b)); }
+  .rd { --rd-top-space: calc(var(--safe-t) + 57px); --rd-bottom-space: calc(30px + var(--safe-b)); --pg-safe-b: 0px; }
   .rd.chap-on { --rd-top-space: calc(var(--safe-t) + 105px); }
 }
 .rd-top { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; min-height: var(--rd-top-space); background: var(--r-bar); padding-top: var(--safe-t); }
@@ -73,12 +75,13 @@
 .rd.collapsed .rd-foot { display: none; }
 .rd-foot-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rd-foot-r { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.rd-pg { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + var(--safe-b)); font-size: 11.5px; color: var(--r-muted); font-variant-numeric: tabular-nums; pointer-events: none; z-index: 4; }
-.rd:not(.collapsed) .rd-pg { bottom: calc(40px + var(--safe-b)); }
-/* 휴대폰은 펼친 아래 띠가 본문 위에 겹친다 — 쪽 번호를 띠 위로 올리면 맨 아래 줄 글자와 겹치므로 제자리(띠 가운데)에 둔다 */
+/* 쪽 번호 — 글 자리를 차지하지 않는 곳에: 넓은 화면은 늘 아래 띠 가운데, 휴대폰은 접혔을 때 위쪽 접힌 띠 오른쪽
+   (화면 아래에 두면 그 줄만큼 글이 덜 들어간다 — 2026-10-30), 펼쳤을 때 아래 띠 가운데(띠 왼쪽 글은 좁힌다) */
+.rd-pg { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + var(--safe-b)); font-size: 11.5px; line-height: 14px; color: var(--r-muted); font-variant-numeric: tabular-nums; pointer-events: none; z-index: 4; }
+.rd:not(.collapsed) .rd-pg { z-index: 6; }
+.rd.pg-on .rd-foot-l { max-width: calc(50% - 44px); }
 @media (max-width: 899.98px) {
-  .rd:not(.collapsed) .rd-pg { bottom: calc(8px + var(--safe-b)); z-index: 6; }
-  .rd.pg-on .rd-foot-l { max-width: calc(50% - 44px); }
+  .rd.collapsed .rd-pg { top: calc(var(--safe-t) + 5px); bottom: auto; left: auto; right: 14px; transform: none; z-index: 6; }
 }
 .rd-loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--r-bg); z-index: 20; color: var(--r-muted); font-size: 14px; }
 .rd-error { max-width: 440px; margin: 12vh auto 0; text-align: center; padding: 24px; }

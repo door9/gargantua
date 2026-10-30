@@ -89,8 +89,13 @@ export class PagedView {
     const H = this.el.clientHeight;
     const spread = st.spread === 'off' ? false : st.spread === 'on' ? W >= 640 : (W >= 900 && W > H * 1.05);
     const m = Math.round(Math.max(14, Math.min(st.margin, W * 0.08)) + (spread ? 18 : 0));
-    const mv = Math.round(Math.max(18, Math.min(44, H * 0.045)));
-    return { W, H, spread, m, mv };
+    // 위아래 여백은 조금만 — 위는 메뉴 띠가, 아래는 화면 끝(휴대폰)·아래 띠(넓은 화면)가 이미 글과 떼어 준다.
+    // 예전엔 화면 높이의 4.5%(18~44px)를 위아래로 똑같이 비워 휴대폰에서 한 쪽에 한두 줄이 덜 들어갔다(2026-10-30 사용자 지적).
+    // 휴대폰은 본문이 화면 끝까지라 아래에 제스처 막대 자리(--pg-safe-b)가 더해진다. 쪽 번호는 휴대폰에선 위쪽 접힌 띠에 둔다(reader.css)
+    const wide = innerWidth >= 900;
+    const mt = wide ? 14 : 4;
+    const mb = wide ? 12 : 6;
+    return { W, H, spread, m, mt, mb };
   }
 
   async showSection(s, { o = null, atEnd = false, keepWindow = false } = {}) {
@@ -138,11 +143,12 @@ export class PagedView {
     this.geo = g;
     this.el.classList.toggle('spread', g.spread);
     const cs = this.content.style;
-    this.vp.style.padding = `${g.mv}px ${g.m}px`;
-    cs.height = `${Math.max(120, g.H - g.mv * 2)}px`;
+    this.vp.style.padding = `${g.mt}px ${g.m}px calc(${g.mb}px + var(--pg-safe-b, 0px)) ${g.m}px`;
+    const ch = `max(120px, calc(${g.H - g.mt - g.mb}px - var(--pg-safe-b, 0px)))`;
+    cs.height = ch;
     cs.columnCount = g.spread ? '2' : '1';
     cs.columnGap = `${g.m * 2}px`;
-    cs.setProperty('--pg-h', `${Math.max(120, g.H - g.mv * 2)}px`);
+    cs.setProperty('--pg-h', ch);
     cs.transition = 'none';
     cs.transform = 'translateX(0)';
     const end = this.content.querySelector('.pg-end');
