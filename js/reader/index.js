@@ -13,6 +13,7 @@ import { FlowView } from './flow.js';
 import { PagedView } from './paged.js';
 import { PdfView } from './pdfview.js';
 import { Painter, HL_SUPPORTED } from './painter.js';
+import { TouchSelect } from './touchsel.js';
 import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from './chapters.js';
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
@@ -276,6 +277,8 @@ class Reader {
       const sel = getSelection();
       if (sel && !sel.isCollapsed && this.pending) { e.preventDefault(); this.showSelTool(true); }
     });
+    // 휴대폰·태블릿은 기본 선택(복사·번역·웹 검색 메뉴가 같이 뜬다) 대신 앱이 직접 고른다
+    this.tsel = new TouchSelect(this);
     if (innerWidth >= 1100 && state.app.readerPanel) this.togglePanel(true);
   }
 
@@ -530,6 +533,7 @@ class Reader {
   onLocate(loc, { dir, atEnd, initial } = {}) {
     if (!loc || !this.alive) return;
     this.lastLoc = loc;
+    if (this.tsel?.sel) this.tsel.place();
     this.lastActivity = Date.now();
     let progress;
     if (this.isPdf) {
@@ -631,6 +635,7 @@ class Reader {
   unitsCleared() {
     this.painter.removeWhere(() => true);
     this.unitAnns.clear();
+    if (this.tsel?.dropUnit()) this.onTouchSelect(null);
   }
 
   unitRemoved(u) {
@@ -638,6 +643,7 @@ class Reader {
     if (ids) for (const id of ids) this.painter.remove(id);
     this.unitAnns.delete(u);
     this.painter.removeWhere((k) => k.startsWith(`find:${u}:`));
+    if (this.tsel?.dropUnit(u)) this.onTouchSelect(null);
   }
 
   unitsRendered(units) {
@@ -746,6 +752,7 @@ class Reader {
 
   // 선택한 글 → {u, start, end, root}
   selectionInfo() {
+    if (this.tsel?.on) return this.tsel.info;
     const sel = getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
     const range = sel.getRangeAt(0);
@@ -870,12 +877,14 @@ class Reader {
   clearSelection() {
     this.pending = null;
     getSelection()?.removeAllRanges();
+    this.tsel?.clear();
     this.hideSelTool();
   }
 
   // ── 선택 도구 ──
   onSelectionChange() {
-    if (!this.alive) return;
+    // 손가락으로 고를 때는 기본 선택을 쓰지 않는다(입력 칸 등의 선택 소식이 손가락 선택을 지우지 않게)
+    if (!this.alive || this.tsel?.on) return;
     const info = this.selectionInfo();
     if (!info) {
       this.pending = null;
@@ -884,6 +893,12 @@ class Reader {
     }
     this.pending = info;
     this.showSelTool();
+  }
+
+  // 손가락으로 고른 글(touchsel.js) — 고르는 중엔 도구를 감추고, 손을 떼면 띄운다
+  onTouchSelect(info, done = false) {
+    this.pending = info;
+    if (info && done) this.showSelTool(); else this.hideSelTool();
   }
 
   showSelTool() {
@@ -929,10 +944,10 @@ class Reader {
     const last = rects[rects.length - 1] || first;
     const tw = tool.offsetWidth;
     const th = tool.offsetHeight;
-    const touch = matchMedia('(pointer: coarse)').matches;
+    const touch = this.tsel?.on || matchMedia('(pointer: coarse)').matches;
     let top;
     let left;
-    // 휴대폰은 기본 메뉴가 위에 뜨므로 아래에
+    // 휴대폰은 끝 손잡이 아래에(고른 글을 손가락·도구가 가리지 않게)
     if (touch) {
       top = last.bottom + 34;
       if (top + th > innerHeight - 8) top = first.top - th - 54;
@@ -952,6 +967,9 @@ class Reader {
 
   // ── 누르기: 링크·메모 표시·하이라이트·쪽 넘기기 ──
   onContentClick(e) {
+    // 손가락 선택: 고르기를 마치며 손을 뗄 때 오는 누르기는 먹고, 고른 글이 있으면 누르기는 풀기만 한다
+    if (this.tsel?.eatClick()) { e.preventDefault(); return; }
+    if (this.tsel?.sel) { e.preventDefault(); this.clearSelection(); return; }
     const mark = e.target.closest('.g-note-mark');
     if (mark) {
       e.preventDefault();
@@ -1467,13 +1485,25 @@ class Reader {
     const onKey = (e) => this.onKey(e);
     const onAct = throttle(() => { this.lastActivity = Date.now(); }, 2000);
     const onVis = () => { if (document.visibilityState === 'hidden') this.flush(); };
-    const onResize = throttle(() => { if (this.pending) this.placeSelTool(this.pending.range); }, 200);
+    const onResize = throttle(() => {
+      if (this.pending) this.placeSelTool(this.pending.range);
+      this.tsel?.place();
+      // 전자책 보기는 크기가 바뀐 뒤 조금 있다 다시 짠다 — 그 뒤 자리로 한 번 더
+      clearTimeout(this.replaceTimer);
+      this.replaceTimer = setTimeout(() => {
+        if (this.pending && !this.selTool.hidden) this.placeSelTool(this.pending.range);
+        this.tsel?.place();
+      }, 400);
+    }, 200);
     document.addEventListener('selectionchange', onSel);
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onAct, { passive: true });
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('resize', onResize);
-    this.host.addEventListener('scroll', () => { if (!this.selTool.hidden && this.pending) this.placeSelTool(this.pending.range); }, { capture: true, passive: true });
+    this.host.addEventListener('scroll', () => {
+      if (!this.selTool.hidden && this.pending) this.placeSelTool(this.pending.range);
+      if (this.tsel?.sel) this.tsel.place();
+    }, { capture: true, passive: true });
     this.offs.push(
       () => document.removeEventListener('selectionchange', onSel),
       () => document.removeEventListener('keydown', onKey),
@@ -1547,7 +1577,9 @@ class Reader {
     if (this.tts) panels.stopSpeech(this);
     closePopovers();
     this.hideSelTool();
+    clearTimeout(this.replaceTimer);
     this.view?.destroy();
+    this.tsel?.destroy();
     this.painter.destroy();
     this.res.revoke();
     if (this.pdf) closePdf(this.pdf);

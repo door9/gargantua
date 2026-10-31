@@ -56,6 +56,8 @@ export class PagedView {
       const dy = e.clientY - p.y;
       const sel = getSelection();
       if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+      // 손가락으로 고르는 중·고른 글이 있을 때 끈 것은 쪽 넘기기가 아니다(touchsel.js)
+      if (this.r.tsel?.engaged()) return;
       if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3 && Date.now() - p.t < 900) {
         this.swipedAt = Date.now();
         if (dx < 0) this.next(); else this.prev();

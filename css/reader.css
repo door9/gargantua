@@ -6,6 +6,7 @@
   --r-bar: #FAF9F5; --r-line: rgba(32, 35, 31, .1); --r-chip: rgba(32, 35, 31, .05);
   --r-find: rgba(255, 224, 130, .55); --r-find-cur: rgba(255, 190, 70, .9);
   --rh0: rgba(255, 224, 120, .85); --rh1: rgba(170, 230, 196, .9); --rh2: rgba(245, 190, 205, .9); --rh3: rgba(180, 214, 244, .92);
+  --r-sel: rgba(74, 116, 95, .26); --r-selh: #4A745F;
   --rfont: var(--serif);
   position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--r-bg); color: var(--r-fg);
 }
@@ -14,12 +15,14 @@
   --r-bar: #F2E6CB; --r-line: rgba(53, 44, 32, .12); --r-chip: rgba(53, 44, 32, .06);
   --r-find: rgba(135, 194, 138, .45); --r-find-cur: rgba(105, 168, 110, .85);
   --rh0: rgba(250, 210, 100, .7); --rh1: rgba(150, 205, 160, .7); --rh2: rgba(230, 160, 170, .62); --rh3: rgba(150, 190, 225, .7);
+  --r-sel: rgba(155, 112, 69, .28); --r-selh: #9B7045;
 }
 .rd.pal-night {
   --r-bg: #131815; --r-fg: #D8DED9; --r-muted: #969F98; --r-link: #8FC5A9; --r-accent: #6C9B81;
   --r-bar: #131815; --r-line: rgba(255, 255, 255, .09); --r-chip: rgba(255, 255, 255, .06);
   --r-find: rgba(79, 118, 93, .55); --r-find-cur: rgba(92, 141, 107, .9);
   --rh0: rgba(150, 125, 40, .62); --rh1: rgba(64, 120, 90, .65); --rh2: rgba(130, 62, 80, .65); --rh3: rgba(60, 95, 128, .7);
+  --r-sel: rgba(108, 155, 129, .4); --r-selh: #6C9B81;
   color-scheme: dark;
 }
 .rd[data-font="sans"] { --rfont: var(--ui); }
@@ -182,6 +185,17 @@
 ::highlight(g-flash) { background-color: rgba(217, 130, 43, .45); }
 ::highlight(g-tts) { background-color: rgba(108, 155, 129, .35); text-decoration: underline; text-decoration-color: var(--r-accent); }
 .textLayer ::highlight(g-hl-0), .textLayer ::highlight(g-hl-1), .textLayer ::highlight(g-hl-2), .textLayer ::highlight(g-hl-3) { color: transparent; }
+
+/* 손가락으로 고르기(touchsel.js) — 휴대폰 기본 선택과 길게 누르기 메뉴(복사·번역·모두 선택·웹 검색, 링크·그림 메뉴)를
+   끄고 앱이 고른 곳을 칠한다. 입력 칸은 그대로 고를 수 있게 */
+.rd.touchsel, .rd.touchsel * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }
+.rd.touchsel :is(input, textarea, [contenteditable]:not([contenteditable="false"])) { -webkit-user-select: text !important; user-select: text !important; }
+::highlight(g-sel) { background-color: var(--r-sel); }
+.textLayer ::highlight(g-sel) { color: transparent; }
+/* 손잡이 — left·top이 고른 글의 처음(왼쪽 아래)·끝(오른쪽 아래). 누르기는 본문이 받아 touchsel.js가 자리로 가린다 */
+.tsel-h { position: fixed; z-index: 58; width: 20px; height: 20px; background: var(--r-selh); pointer-events: none; box-shadow: 0 1px 2px rgba(0, 0, 0, .18); }
+.tsel-s { margin-left: -20px; border-radius: 50% 0 50% 50%; }
+.tsel-e { border-radius: 0 50% 50% 50%; }
 .g-note-mark { display: inline-grid; place-items: center; width: 1.3em; height: 1.3em; margin-left: .2em; vertical-align: -.15em; border-radius: 4px; color: var(--horizon); text-indent: 0; line-height: 1; }
 .g-note-mark .ico { width: 1em; height: 1em; stroke-width: 1.8; }
 .g-note-mark.pdf { position: absolute; width: 22px; height: 22px; margin: 0; z-index: 3; background: rgba(255, 255, 255, .9); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); border-radius: 6px; }
