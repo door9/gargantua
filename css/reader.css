@@ -122,6 +122,14 @@
 .g-text pre { font-family: var(--mono); font-size: .84em; line-height: 1.55; background: var(--r-chip); padding: .8em 1em; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; text-align: left; }
 .g-text code { font-family: var(--mono); font-size: .86em; background: var(--r-chip); padding: .05em .3em; border-radius: 4px; }
 .g-text pre code { background: none; padding: 0; }
+/* 책 본문의 서체는 늘 앱 설정(명조·고딕)을 따른다 — 줄글·전자책 보기·주석 창 모두, 파일 형식과 상관없이(2026-11-07).
+   책 CSS(html·body 규칙 포함)·글자마다 붙은 style·<font face> 의 서체 지정은 무시하고, 코드 글자(pre·code·kbd·samp·tt)와 앱 장식([data-gui])만 제 서체를 둔다.
+   묶음(@layer) 안의 !important 라서 책 CSS 의 'font-family: … !important' 도 이긴다.
+   그 전에는 책이 이 기기에 없는 서체('SM신명조_Pro' 등)를 대신 쓸 종류 없이 지정하면 브라우저 기본 서체(휴대폰은 고딕)로 보였다 */
+@layer gfont {
+  .g-book { font-family: var(--rfont) !important; }
+  .g-text :not(pre, code, kbd, samp, tt, [data-gui], [data-gui] *) { font-family: inherit !important; }
+}
 .g-text hr { border: 0; border-top: 1px solid var(--r-line); margin: 1.6em 0; }
 .g-text :is(sup, sub) { font-size: .7em; line-height: 0; }
 .g-text sup a, .g-noteref { text-decoration: none; font-weight: 700; padding: 0 .12em; }
@@ -142,13 +150,12 @@
 .flow .g-text img { max-height: 82vh; object-fit: contain; }
 .flow .g-text :is(div, p, figure) > img:only-child { display: block; margin: .6em auto; }
 
-/* 줄글 보기: 앱 글꼴로 통일(책 속 인라인 스타일보다 사용자 설정이 우선) */
+/* 줄글 보기: 책 속 인라인 스타일보다 사용자 설정이 우선(서체는 위 '책 본문의 서체' 규칙) */
 .flow-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; outline: none; scroll-behavior: auto; overflow-anchor: auto; }
 .flow { max-width: calc(var(--maxw) + var(--mx) * 2); margin: 0 auto; padding: 22px var(--mx) 120px; }
 .g-sec { content-visibility: auto; contain-intrinsic-size: auto 1200px; }
-.flow .g-body [style] { font-family: inherit !important; color: inherit !important; background-color: transparent !important; line-height: inherit !important; }
+.flow .g-body [style] { color: inherit !important; background-color: transparent !important; line-height: inherit !important; }
 .flow .g-body :is(div, section, article, span, p)[style*="font-size"] { font-size: inherit !important; }
-.flow .g-body :is(p, div, span, li, blockquote, a, em, strong, b, i)[class] { font-family: inherit; }
 .flow-end { text-align: center; padding: 34px 0 10px; display: grid; justify-items: center; gap: 12px; font-family: var(--ui); }
 .flow-end-mark { font-size: 13px; letter-spacing: .2em; color: var(--r-muted); }
 .flow-end .gbtn { color: var(--r-accent); max-width: 100%; }
