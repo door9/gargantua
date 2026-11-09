@@ -1411,7 +1411,9 @@ export function assemble(pagesA, { onProgress } = {}) {
       const ended = /[.!?。」』”’)\]다요]$/.test(A.text.trim());
       const indB = B.x0 - b._P.left, indA = A.x0 - lastBody._P.left;
       const indented = indB > B.size * 0.7 && !(indA > A.size * 0.7 && Math.abs(indB - indA) < A.size);
-      if (full && !ended && !indented && !listStart(B.text) && !A.tabbed && !B.tabbed && Math.abs(A.size - B.size) < 0.6) {
+      // 스캔 쪽의 글자 크기는 쪽마다 조금씩 다르게 재진다 — 12%까지는 같은 크기로 본다
+      const sizeTol = pagesA.some((p) => p.ocr) ? Math.max(0.6, A.size * 0.12) : 0.6;
+      if (full && !ended && !indented && !listStart(B.text) && !A.tabbed && !B.tabbed && Math.abs(A.size - B.size) < sizeTol) {
         const r = joinScore(A.text, B.text, stats, { wrap: wrapHint(A, rightOf(A, lastBody._P.right), normalSpace), enums });
         if (r.code !== 'H') {
           b.cont = true;
