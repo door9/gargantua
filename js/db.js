@@ -103,6 +103,13 @@ export const db = {
   },
 };
 
+// 문서의 변환본과 그 그림(fig:문서id:…)을 함께 지운다
+export async function dropDocCache(docId) {
+  const prefix = `fig:${docId}:`;
+  const keys = await db.getAllKeys('cache');
+  await db.delMany('cache', [docId, ...keys.filter((k) => String(k).startsWith(prefix))]);
+}
+
 export async function kvGet(key, fallback = null) {
   const row = await db.get('kv', key);
   return row ? row.v : fallback;

@@ -227,8 +227,20 @@ export function resolveAnchor(text, anchor) {
     normHint = lo;
   }
   const m = bestMatch(norm.s, nq, normalize(anchor.prefix || ''), normalize(anchor.suffix || ''), normHint);
-  if (!m) return null;
-  return { start: norm.map[m.start], end: norm.map[m.end - 1] + 1 };
+  if (m) return { start: norm.map[m.start], end: norm.map[m.end - 1] + 1 };
+  // 마지막으로 빈칸을 모두 빼고(PDF 의 전자책처럼 보기와 원본 쪽 보기는 줄 끝 빈칸이 다르다)
+  const bare = nq.replace(/\s+/g, '');
+  if (bare.length < 4) return null;
+  let squeezed = '';
+  const back = [];
+  for (let i = 0; i < norm.s.length; i++) {
+    if (norm.s[i] === ' ') continue;
+    squeezed += norm.s[i];
+    back.push(norm.map[i]);
+  }
+  const k = squeezed.indexOf(bare);
+  if (k < 0) return null;
+  return { start: back[k], end: back[k + bare.length - 1] + 1 };
 }
 
 // 화면 좌표의 글자 위치

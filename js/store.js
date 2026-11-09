@@ -1,5 +1,5 @@
 // 앱 상태(서재·위치·하이라이트·되새기기·독서 시간)와 저장. 바꿀 때마다 updatedAt을 새로 찍어야 동기화가 되돌리지 않는다.
-import { db, kvGet, kvSet } from './db.js';
+import { db, kvGet, kvSet, dropDocCache } from './db.js';
 import { now, uid, emit, dayKey, sha256Hex, debounce } from './util.js';
 
 export const READER_DEFAULTS = {
@@ -143,7 +143,7 @@ export async function removeDoc(id) {
   }
   await db.put('docs', tomb);
   await db.putMany('anns', annTombs);
-  await db.del('cache', id);
+  await dropDocCache(id);
   await db.del('info', id);
   state.info.delete(id);
   await deleteFileIfUnused(doc.fileHash);

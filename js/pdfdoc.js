@@ -12,10 +12,11 @@ export function pdfjs() {
   return pdfjsPromise;
 }
 
-export async function openPdf(blob) {
+export async function openPdf(blob, extra = {}) {
   const lib = await pdfjs();
   const data = new Uint8Array(await blob.arrayBuffer());
   const task = lib.getDocument({
+    ...extra,
     data,
     cMapUrl: `${BASE}cmaps/`,
     cMapPacked: true,

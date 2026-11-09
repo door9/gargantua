@@ -1,6 +1,6 @@
 // 자동 동기화·백업: 서재 기록(작은 JSON)은 자주, 원본 파일은 한 번만 올린다. 날마다 기록 사본도 남긴다.
 // 병합 규칙: 기록마다 updatedAt이 늦은 쪽이 이긴다(지운 것도 '지움 표시'로 남겨 되살아나지 않게).
-import { db, kvGet, kvSet } from '../db.js';
+import { db, kvGet, kvSet, dropDocCache } from '../db.js';
 import { state, liveDocs, putFile, getFile, localFileHashes, noteFileStored } from '../store.js';
 import { emit, on, debounce, dayKey, sha256Hex, uid, now } from '../util.js';
 import * as dbx from './dropbox.js';
@@ -390,7 +390,7 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
   }
   if (putRev.length) await db.putMany('rev', putRev.map((r) => state.rev.get(r.annId) || r));
   for (const d of removedDocs) {
-    await db.del('cache', d.id);
+    await dropDocCache(d.id);
     await db.del('info', d.id);
     state.info.delete(d.id);
     if (!liveDocs().some((x) => x.fileHash === d.fileHash)) {

@@ -1,7 +1,7 @@
 // 문서 가져오기·열기 준비(변환본 보관, 그림·글꼴 꺼내기)
 import { db } from './db.js';
 import { state, saveDoc, saveInfo, putFile, getFile, liveDocs, localFileHashes } from './store.js';
-import { parseDocument, sniffFormat, PARSER_VERSION, ParseError } from './parse/index.js';
+import { parseDocument, sniffFormat, PARSER_VERSION, PDF_BOOK_VERSION, ParseError } from './parse/index.js';
 import { pdfInfo, openPdf, pdfTexts, closePdf } from './pdfdoc.js';
 import { unzipEpub, readEpubPackage, epubResources } from './parse/epub.js';
 import { unzipDocx, docxResources } from './parse/docx.js';
@@ -17,6 +17,7 @@ export function bookSummary(book, texts) {
 }
 
 export const MAX_FILE = 400 * 1024 * 1024;
+const PDF_LABEL = '전자책으로 정리하는 중';
 
 export class ImportError extends Error {}
 
@@ -59,6 +60,15 @@ export async function importOne(blob, name, { onStatus, id, addedAt, title } = {
       }
       meta = { title: pi.title, author: pi.author };
       info = { ...info, pages: pi.pages, cover: pi.cover, chars: 0 };
+      // 글을 다시 짜 전자책처럼 읽게 미리 만들어 둔다 — 실패해도 원본 쪽 보기로 열 수 있으니 가져오기는 막지 않는다
+      try {
+        onStatus?.(PDF_LABEL);
+        const { book, texts } = await parseDocument(blob, 'pdf', { onProgress: (p) => onStatus?.(`${PDF_LABEL} ${Math.round(p * 100)}%`) });
+        await db.put('cache', { docId, fileHash: hash, pv: PDF_BOOK_VERSION, book, texts });
+        if (book.reflow !== false) info = { ...info, chars: book.chars, lang: book.lang, sections: book.sections.length, ...bookSummary(book, texts) };
+      } catch (e) {
+        console.warn('PDF를 전자책으로 정리하지 못했습니다', e);
+      }
     } else {
       onStatus?.('변환 중');
       const { book, texts, cover } = await parseDocument(blob, format, { onProgress: (p) => onStatus?.(`변환 중 ${Math.round(p * 100)}%`) });
@@ -93,16 +103,37 @@ export async function importOne(blob, name, { onStatus, id, addedAt, title } = {
 
 // 변환본 불러오기(없거나 낡았으면 원본에서 다시 변환)
 export async function loadBook(doc, { onStatus, fetchFile } = {}) {
+  const pdf = doc.format === 'pdf';
+  const version = pdf ? PDF_BOOK_VERSION : PARSER_VERSION;
   const cached = await db.get('cache', doc.id);
-  if (cached && cached.fileHash === doc.fileHash && cached.pv === PARSER_VERSION && cached.book) return cached;
+  if (cached && cached.fileHash === doc.fileHash && cached.pv === version && cached.book) return cached;
   const blob = await requireFile(doc, { onStatus, fetchFile });
-  onStatus?.('문서 변환 중');
-  const { book, texts, cover } = await parseDocument(blob, doc.format, { onProgress: (p) => onStatus?.(`문서 변환 중 ${Math.round(p * 100)}%`) });
-  const rec = { docId: doc.id, fileHash: doc.fileHash, pv: PARSER_VERSION, book, texts };
+  const label = pdf ? PDF_LABEL : '문서 변환 중';
+  onStatus?.(label);
+  const { book, texts, cover } = await parseDocument(blob, doc.format, { onProgress: (p) => onStatus?.(`${label} ${Math.round(p * 100)}%`) });
+  const rec = { docId: doc.id, fileHash: doc.fileHash, pv: version, book, texts };
+  // 쪽별 글(원본 쪽 보기·하이라이트)은 변환 방식과 상관없다 — 그대로 둔다. 그림은 자리가 바뀌었을 수 있어 다시 그린다
+  if (pdf && cached?.fileHash === doc.fileHash && cached.pdfTexts) rec.pdfTexts = cached.pdfTexts;
+  if (pdf) await dropFigures(doc.id);
   await db.put('cache', rec);
+  if (pdf && book.reflow === false) return rec;
   const info = state.info.get(doc.id) || { docId: doc.id };
   await saveInfo({ ...info, docId: doc.id, format: doc.format, chars: book.chars, lang: book.lang, cover: info.cover || cover, sections: book.sections.length, ...bookSummary(book, texts) });
   return rec;
+}
+
+// 전자책으로 다시 짠 PDF 의 그림(읽을 때 원본에서 오려 그린 것) — 다음에 열 때 다시 그리지 않게 보관
+const figId = (docId, key) => `fig:${docId}:${key}`;
+export async function getFigure(docId, key) {
+  return (await db.get('cache', figId(docId, key)))?.blob || null;
+}
+export async function putFigure(docId, key, blob) {
+  await db.put('cache', { docId: figId(docId, key), blob });
+}
+async function dropFigures(docId) {
+  const prefix = figId(docId, '');
+  const keys = await db.getAllKeys('cache');
+  await db.delMany('cache', keys.filter((k) => String(k).startsWith(prefix)));
 }
 
 export async function requireFile(doc, { onStatus, fetchFile } = {}) {
@@ -146,9 +177,11 @@ export async function loadPdfTexts(doc, pdf) {
   }
   try {
     const texts = await pdfTexts(target);
-    await db.put('cache', { docId: doc.id, fileHash: doc.fileHash, pv: PARSER_VERSION, pdfTexts: texts });
+    // 책으로 만들어 둔 것은 그대로 둔다
+    const latest = await db.get('cache', doc.id);
+    await db.put('cache', { ...(latest?.fileHash === doc.fileHash ? latest : { pv: 0 }), docId: doc.id, fileHash: doc.fileHash, pdfTexts: texts });
     const info = state.info.get(doc.id) || { docId: doc.id };
-    await saveInfo({ ...info, chars: texts.reduce((n, t) => n + t.length, 0), pages: texts.length });
+    await saveInfo({ ...info, chars: info.starts ? info.chars : texts.reduce((n, t) => n + t.length, 0), pages: texts.length });
     return texts;
   } finally {
     if (own) closePdf(own);
@@ -159,7 +192,8 @@ export async function loadPdfTexts(doc, pdf) {
 export async function searchableTexts(doc) {
   const cached = await db.get('cache', doc.id);
   if (!cached || cached.fileHash !== doc.fileHash) return null;
-  if (doc.format === 'pdf') return cached.pdfTexts ? { kind: 'pdf', texts: cached.pdfTexts } : null;
+  // PDF 는 전자책으로 정리한 글을 먼저(문단이 이어져 있어 찾기가 잘 된다), 없으면 쪽별 글
+  if (doc.format === 'pdf' && !(cached.book && cached.book.reflow !== false && cached.texts)) return cached.pdfTexts ? { kind: 'pdf', texts: cached.pdfTexts } : null;
   if (cached.texts) return { kind: 'text', texts: cached.texts, book: cached.book };
   return null;
 }

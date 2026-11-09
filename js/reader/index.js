@@ -14,6 +14,7 @@ import { PagedView } from './paged.js';
 import { PdfView } from './pdfview.js';
 import { Painter, HL_SUPPORTED } from './painter.js';
 import { TouchSelect } from './touchsel.js';
+import { PdfFigures } from './pdffigs.js';
 import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from './chapters.js';
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
@@ -78,6 +79,8 @@ class Reader {
     this.setLoading('여는 중');
     try {
       this.pos = state.pos.get(this.doc.id) || {};
+      if (this.doc.format === 'pdf') await this.decidePdfView();
+      if (!this.alive) return;
       if (this.isPdf) await this.loadPdf(); else await this.loadText();
       if (!this.alive) return;
       // 켠 뒤·오래 가렸다 돌아온 뒤 다른 기기의 변경을 아직 받지 못했으면(로딩 화면을 건너뛴 때 등) 받기가 끝날 때까지
@@ -112,23 +115,75 @@ class Reader {
     return readerFor(this.doc.id);
   }
 
+  // PDF: 전자책처럼 다시 짠 글로 볼지 원본 쪽 그대로 볼지. 직접 고른 적이 있으면 그대로, 아니면 다시 짤 수 있는 문서는 전자책처럼
+  async decidePdfView() {
+    const pick = this.opts.pdfView || this.pos.pdfView || globalThis.__gTest?.pdfView || null;
+    if (pick === 'original') {
+      this.isPdf = true;
+      // 찾기 결과 등에서 책 위치(구획·글자)로 왔으면 쪽으로 바꾸려고 책을 불러 둔다
+      if (Number.isInteger(this.opts.loc?.s)) {
+        try { this.bookRec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile }); this.book = this.bookRec.book.reflow === false ? null : this.bookRec.book; } catch { /* 책이 없으면 첫 쪽으로 */ }
+      }
+      return;
+    }
+    try {
+      const rec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
+      this.bookRec = rec;
+      this.isPdf = rec.book.reflow === false || (pick !== 'book' && !!rec.book.preferOriginal);
+    } catch (e) {
+      console.warn('PDF를 전자책으로 정리하지 못했습니다', e);
+      this.isPdf = true;
+    }
+  }
+
   initialView() {
     if (this.isPdf) return 'pdf';
     if (this.opts.view) return this.opts.view;
-    // 직접 고른 적이 있으면 그 보기, 아니면 EPUB은 전자책 보기·나머지는 줄글 보기(__gTest: 시험 도구가 옛 기본으로 열 때)
-    if (this.pos.viewPick) return this.pos.view === 'paged' ? 'paged' : 'flow';
-    return globalThis.__gTest?.view || (this.doc.format === 'epub' ? 'paged' : 'flow');
+    // 직접 고른 적이 있으면 그 보기, 아니면 EPUB·PDF는 전자책 보기·나머지는 줄글 보기(__gTest: 시험 도구가 옛 기본으로 열 때)
+    if (this.pos.viewPick && this.pos.view !== 'pdf') return this.pos.view === 'paged' ? 'paged' : 'flow';
+    return globalThis.__gTest?.view || (this.doc.format === 'epub' || this.doc.format === 'pdf' ? 'paged' : 'flow');
   }
 
   initialLoc() {
-    if (this.opts.loc) return this.opts.loc;
+    if (this.opts.loc) return this.normalLoc(this.opts.loc);
     return this.locOf(this.pos);
+  }
+
+  // PDF: 책 위치 → 원본 쪽(쪽 안 비율)
+  pageLocOf(loc) {
+    const st = this.book.pageStarts;
+    const g = toGlobal(this.book, loc.s, loc.o);
+    let lo = 0;
+    let hi = st.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (st[mid] <= g) lo = mid; else hi = mid - 1;
+    }
+    const next = lo + 1 < st.length ? st[lo + 1] : this.book.chars;
+    return { p: lo, y: next > st[lo] ? +clamp((g - st[lo]) / (next - st[lo]), 0, 0.98).toFixed(3) : 0 };
+  }
+
+  // PDF: 원본 쪽(쪽 안 비율) → 책 위치
+  bookLocOfPage(p, y = 0) {
+    const st = this.book.pageStarts;
+    const i = clamp(p || 0, 0, st.length - 1);
+    const next = i + 1 < st.length ? st[i + 1] : this.book.chars;
+    return fromGlobal(this.book, Math.round(st[i] + (next - st[i]) * clamp(y || 0, 0, 1)));
+  }
+
+  // 다른 보기에서 적은 위치를 지금 보기의 위치로(PDF 전자책 보기 ↔ 원본 쪽 보기)
+  normalLoc(loc) {
+    if (!loc || this.doc.format !== 'pdf') return loc;
+    if (this.isPdf && !Number.isInteger(loc.p)) return Number.isInteger(loc.s) && this.book?.pageStarts ? this.pageLocOf(loc) : { p: 0, y: 0 };
+    if (!this.isPdf && !Number.isInteger(loc.s)) return this.book?.pageStarts ? this.bookLocOfPage(loc.p, loc.y) : { s: 0, o: 0 };
+    return loc;
   }
 
   // 읽던 자리 기록 → 화면 위치
   locOf(p) {
     if (this.isPdf) return { p: p.p || 0, y: p.y || 0 };
     if (Number.isInteger(p.s)) return { s: Math.min(p.s, this.book.sections.length - 1), o: p.o || 0 };
+    if (this.doc.format === 'pdf' && Number.isInteger(p.p) && this.book.pageStarts) return this.bookLocOfPage(p.p, p.y);
     if (p.progress) return fromGlobal(this.book, Math.floor(p.progress * this.book.chars));
     return { s: 0, o: 0 };
   }
@@ -208,11 +263,14 @@ class Reader {
   }
 
   async loadText() {
-    const rec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
+    const rec = this.bookRec || await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
+    this.bookRec = rec;
     this.book = rec.book;
     this.texts = rec.texts;
     this.chapters = buildChapters(this.book, this.texts);
-    if (this.doc.format === 'epub' || this.doc.format === 'docx') {
+    if (this.doc.format === 'pdf') {
+      if (!this.figures) this.figures = new PdfFigures(this, this.book.figs, { fetchFile: fetchRemoteFile });
+    } else if (this.doc.format === 'epub' || this.doc.format === 'docx') {
       const blob = await requireFile(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
       const res = await loadResources(this.doc, blob);
       if (!this.alive) { res.revoke(); return; }
@@ -231,6 +289,8 @@ class Reader {
     this.pdfTextsPromise = loadPdfTexts(this.doc, this.pdf).catch(() => null);
     this.pdfTextsPromise.then((texts) => {
       if (!this.alive || !texts) return;
+      this.pageTexts = texts;
+      if (!this.isPdf) return;
       this.texts = texts;
       // 글이 늦게 왔으면 그사이 못 찾은 하이라이트를 다시 찾는다
       this.resolved.clear();
@@ -385,6 +445,50 @@ class Reader {
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
   }
 
+  // PDF: 전자책처럼 보기 ↔ 원본 쪽 보기(같은 자리에서 이어서)
+  async switchPdfView(original) {
+    if (this.doc.format !== 'pdf' || original === this.isPdf) return;
+    if (this.find) await this.closeFind();
+    const here = this.view?.currentLoc();
+    this.setLoading('보기 바꾸는 중');
+    await sleep(10);
+    try {
+      if (!original && !this.bookRec) this.bookRec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
+      if (!original && this.bookRec.book.reflow === false) {
+        this.setLoading(null);
+        toast('글자가 없는 PDF라 전자책처럼 다시 짤 수 없습니다.');
+        return;
+      }
+      if (!original && !this.book) {
+        this.book = this.bookRec.book;
+        this.chapters = buildChapters(this.book, this.bookRec.texts);
+      }
+      // 지금 자리를 바꿀 보기의 위치로
+      let loc = here;
+      if (here && this.book?.pageStarts) loc = original ? this.pageLocOf(here) : this.bookLocOfPage(here.p, here.y);
+      this.view?.destroy();
+      this.view = null;
+      this.resolved.clear();
+      this.clearSelection();
+      this.isPdf = original;
+      if (original) {
+        if (!this.pdf) await this.loadPdf(); else this.texts = this.pageTexts || [];
+      } else {
+        await this.loadText();
+      }
+      const kind = original ? 'pdf' : this.initialView();
+      await this.mountView(kind, { loc: loc || (original ? { p: 0, y: 0 } : { s: 0, o: 0 }), fresh: false });
+      this.writePos({ pdfView: original ? 'original' : 'book', view: kind });
+      this.updateFooter();
+      this.setLoading(null);
+      toast(original ? '원본 PDF 쪽으로 봅니다.' : '전자책처럼 봅니다.', { duration: 1200 });
+    } catch (e) {
+      console.error(e);
+      this.setLoading(null);
+      toast('보기를 바꾸지 못했습니다.');
+    }
+  }
+
   async setMode(mode) {
     if (this.isPdf) {
       this.mode = mode;
@@ -513,6 +617,7 @@ class Reader {
 
   attachResources(root, onLoad) {
     for (const img of root.querySelectorAll('img[data-g-src]')) {
+      if (this.figures && !this.isPdf) { this.figures.attach(img); continue; }
       const url = this.res.urls.get(img.getAttribute('data-g-src'));
       if (url) {
         if (onLoad) img.addEventListener('load', onLoad, { once: true });
@@ -521,6 +626,22 @@ class Reader {
         img.classList.add('g-img-missing');
       }
     }
+    if (this.figures && !this.isPdf) this.figures.watchTables(root);
+  }
+
+  // PDF 그림·표: 가운데를 누르면 크게(전자책 보기의 좌우 끝은 쪽 넘기기 그대로)
+  openFigureAt(e) {
+    const t = e.target.closest?.('figure.g-fig, .g-table[data-fig]');
+    if (!t) return false;
+    if (this.view?.kind === 'paged') {
+      const box = this.host.getBoundingClientRect();
+      const x = (e.clientX - box.left) / box.width;
+      if (x < 0.28 || x > 0.72) return false;
+    }
+    const key = t.dataset.fig || t.querySelector('img')?.getAttribute('data-g-src');
+    if (!key) return false;
+    this.figures.view(key);
+    return true;
   }
 
   bookCss(keys) {
@@ -533,6 +654,7 @@ class Reader {
   onLocate(loc, { dir, atEnd, initial } = {}) {
     if (!loc || !this.alive) return;
     this.lastLoc = loc;
+    if (!this.isPdf) this.figures?.nudge();
     if (this.tsel?.sel) this.tsel.place();
     this.lastActivity = Date.now();
     let progress;
@@ -559,6 +681,10 @@ class Reader {
   savePosition(loc, { progress, force = false } = {}) {
     if (!loc) return;
     const patch = this.isPdf ? { p: loc.p, y: loc.y || 0 } : { s: loc.s, o: loc.o };
+    // PDF: 두 보기가 서로의 자리를 알 수 있게 — 전자책 보기는 원본 쪽도 함께, 원본 쪽 보기는 책 위치를 지운다(쪽으로 다시 찾는다)
+    if (this.doc.format === 'pdf') {
+      if (this.isPdf) { patch.s = null; patch.o = null; } else if (this.book.pageStarts) Object.assign(patch, this.pageLocOf(loc));
+    }
     patch.progress = progress ?? this.progress ?? 0;
     if (patch.progress >= 0.995 && !this.pos.finishedAt) patch.finishedAt = now();
     patch.mode = this.mode;
@@ -690,6 +816,7 @@ class Reader {
       const root = this.view?.roots.get(r.u);
       const text = this.texts[r.u];
       const fixed = { s: r.u, start: r.start, end: r.end, quote: text.slice(r.start, r.end), prefix: text.slice(Math.max(0, r.start - 32), r.start), suffix: text.slice(r.end, r.end + 32) };
+      if (a.p != null) fixed.p = a.p;
       void root;
       saveAnn({ id: ann.id, anchor: fixed }, { silent: true }).then((saved) => this.resolved.set(ann.id, { v: saved.updatedAt, r }));
     }
@@ -776,7 +903,10 @@ class Reader {
 
   anchorFor(info) {
     const d = describe(info.root, info.start, info.end);
-    return this.isPdf ? { p: info.u, ...d } : { s: info.u, ...d };
+    if (this.isPdf) return { p: info.u, ...d };
+    const a = { s: info.u, ...d };
+    if (this.doc.format === 'pdf' && this.book.pageStarts) a.p = this.pageLocOf({ s: info.u, o: info.start }).p;
+    return a;
   }
 
   overlapping(u, start, end) {
@@ -990,6 +1120,7 @@ class Reader {
       this.openAnnPopover(hit, null, { x: e.clientX, y: e.clientY });
       return;
     }
+    if (this.figures && !this.isPdf && this.openFigureAt(e)) return;
     if (this.view?.onTap?.(e)) return;
     if (this.view?.kind === 'paged') this.toggleChrome();
   }
@@ -1071,7 +1202,7 @@ class Reader {
 
   locLabel(ann) {
     const a = ann.anchor || {};
-    if (this.isPdf) return a.p != null ? `${a.p + 1}쪽` : '';
+    if (this.doc.format === 'pdf') return a.p != null ? `${a.p + 1}쪽` : '';
     if (a.s == null || !this.book) return '';
     const g = toGlobal(this.book, a.s, a.start || 0);
     const ch = this.chapters?.[chapterAt(this.chapters, g)];
@@ -1214,7 +1345,7 @@ class Reader {
     if (!ann || ann.deleted) return;
     if (ann.kind === 'bm') {
       const a = ann.anchor || {};
-      await this.goToLoc(this.isPdf ? { p: a.p, y: a.y || 0 } : { s: a.s, o: a.o || 0 });
+      await this.goToLoc(this.isPdf ? this.normalLoc({ p: a.p, y: a.y || 0, s: a.s, o: a.o }) : this.normalLoc({ s: a.s, o: a.o || 0, p: a.p, y: a.y }));
       return;
     }
     const r = this.resolve(ann);
@@ -1231,6 +1362,7 @@ class Reader {
   locOrder(a) {
     if (!a) return 0;
     if (this.isPdf) return (a.p || 0) + (a.y || 0);
+    if (this.doc.format === 'pdf' && !Number.isInteger(a.s)) { const l = this.normalLoc(a); return toGlobal(this.book, l.s, l.o); }
     return this.book ? toGlobal(this.book, a.s || 0, a.o || 0) : 0;
   }
 
@@ -1266,6 +1398,7 @@ class Reader {
       snippet = t.slice(0, 80).replace(/\s+/g, ' ').trim();
     }
     const anchor = this.isPdf ? { p: loc.p, y: loc.y || 0 } : { s: loc.s, o: loc.o };
+    if (this.doc.format === 'pdf' && !this.isPdf && this.book.pageStarts) Object.assign(anchor, this.pageLocOf(loc));
     await saveAnn({ id: uid('b'), docId: this.doc.id, kind: 'bm', anchor, snippet, progress: this.progress || 0 });
     this.updateBookmarkBtn();
     if (this.side && !this.side.hidden) panels.renderSide(this);
@@ -1436,6 +1569,10 @@ class Reader {
       items.push({ label: '축소', icon: 'zoomOut', onClick: () => this.view.setZoom(this.view.zoom / 1.25) });
       items.push({ label: '폭에 맞추기', icon: 'fitWidth', onClick: () => this.view.setZoom(1) });
     }
+    if (this.doc.format === 'pdf' && this.bookRec?.book?.reflow !== false) {
+      items.push({ divider: true });
+      items.push({ label: this.isPdf ? '전자책처럼 보기' : '원본 PDF 쪽으로 보기', icon: this.isPdf ? 'pages' : 'file', onClick: () => this.switchPdfView(!this.isPdf) });
+    }
     items.push({ divider: true });
     items.push({ label: '하이라이트 · 메모', icon: 'highlight', onClick: () => this.showAnnotations() });
     items.push({ label: '책갈피 목록', icon: 'bookmarks', onClick: () => this.showBookmarks() });
@@ -1460,6 +1597,7 @@ class Reader {
         this.relayoutTimer = setTimeout(() => {
           const loc = this.pendingLoc;
           this.pendingLoc = null;
+          if (!this.isPdf) this.figures?.refit(this.host);
           this.view?.relayout?.(loc);
         }, 120);
       }
@@ -1488,6 +1626,7 @@ class Reader {
     const onResize = throttle(() => {
       if (this.pending) this.placeSelTool(this.pending.range);
       this.tsel?.place();
+      if (!this.isPdf) this.figures?.refit(this.host);
       // 전자책 보기는 크기가 바뀐 뒤 조금 있다 다시 짠다 — 그 뒤 자리로 한 번 더
       clearTimeout(this.replaceTimer);
       this.replaceTimer = setTimeout(() => {
@@ -1582,6 +1721,7 @@ class Reader {
     this.tsel?.destroy();
     this.painter.destroy();
     this.res.revoke();
+    this.figures?.destroy();
     if (this.pdf) closePdf(this.pdf);
     const host = document.getElementById('app-reader');
     host.replaceChildren();

@@ -69,7 +69,7 @@ async function fillToc(r, body, done) {
     ticks.append(h('i', { class: `c${ann.color || 0}${ann.note ? ' n' : ''}`, style: { left: `${(at * 100).toFixed(2)}%` } }));
   }
   for (const b of r.annsOfDoc('bm')) {
-    const a = b.anchor || {};
+    const a = r.normalLoc(b.anchor || {}) || {};
     const at = toGlobal(book, a.s || 0, a.o || 0) / Math.max(1, book.chars);
     ticks.append(h('i', { class: 'bm', style: { left: `${(at * 100).toFixed(2)}%` } }));
   }
@@ -189,7 +189,7 @@ export function bookmarkList(r, { onPick } = {}) {
   }
   bms.forEach((b, i) => {
     const a = b.anchor || {};
-    const where = r.isPdf ? `${(a.p || 0) + 1}쪽` : `${Math.round((toGlobal(r.book, a.s || 0, a.o || 0) / Math.max(1, r.book.chars)) * 100)}%`;
+    const where = r.doc.format === 'pdf' ? `${(a.p || 0) + 1}쪽` : `${Math.round((toGlobal(r.book, a.s || 0, a.o || 0) / Math.max(1, r.book.chars)) * 100)}%`;
     list.append(h('div', { class: 'bm-item' },
       h('button', { class: 'bm-main', onclick: () => { onPick?.(); r.jumpToAnn(b.id); } },
         h('span', { class: 'bm-t' }, `책갈피 ${i + 1} · ${where}`),

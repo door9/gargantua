@@ -136,6 +136,37 @@
 .g-text table { border-collapse: collapse; font-size: .86em; line-height: 1.45; margin: .8em 0; text-indent: 0; }
 .g-text :is(td, th) { border: 1px solid var(--r-line); padding: .35em .6em; vertical-align: top; text-align: left; }
 .g-text th { background: var(--r-chip); font-weight: 700; }
+/* PDF 를 전자책으로 다시 짠 글(parse/pdf.js) */
+.g-text p.g-li { padding-left: 1.25em; text-indent: -1.25em; }
+.g-text p.g-in1 { margin-left: 1.2em; }
+.g-text p.g-in2 { margin-left: 2.4em; }
+.g-text p.g-in3 { margin-left: 3.6em; }
+.g-text p.g-center { text-align: center; text-indent: 0; }
+.g-text p.g-left { text-align: left; text-indent: 0; }
+.g-text p.g-small { font-size: .86em; color: var(--r-muted); text-indent: 0; }
+.g-text p.g-cap { font-size: .88em; color: var(--r-muted); text-align: center; text-indent: 0; line-height: 1.5; }
+.g-text p.g-tocline { display: flex; justify-content: space-between; gap: 1em; text-align: left; text-indent: 0; margin-bottom: .15em; }
+.g-text .g-toc-page { color: var(--r-muted); flex: none; }
+.g-text .g-note-num { font-weight: 700; margin-right: .15em; }
+.g-text figure.g-fig { margin: 1em 0; }
+.g-text figure.g-fig img { display: block; margin: 0 auto; }
+.g-text figure.g-fig-full { margin: .4em 0; }
+.g-text img.g-fig-wait { background: var(--r-chip); }
+.g-text table.g-plain td { border: 0; padding: .15em .6em .15em 0; }
+.g-text p.g-title { text-align: left; text-indent: 0; font-weight: 800; line-height: 1.32; margin: .1em 0 .5em; }
+.g-text p.g-title-1 { font-size: 1.65em; }
+.g-text p.g-title-2 { font-size: 1.3em; }
+.g-text p.g-title-3 { font-size: 1.1em; font-weight: 700; }
+.g-text .g-table[data-fig] td { word-break: keep-all; overflow-wrap: break-word; text-align: left; }
+.g-text .g-table[data-fig] td.g-num { text-align: right; white-space: nowrap; }
+.g-text .g-table.g-table-img { position: relative; overflow: hidden; }
+.g-text .g-table.g-table-img > img { display: block; width: 100%; height: auto; }
+.g-text .g-table.g-table-img > table { position: absolute; inset: 0; width: 100%; height: 1px; table-layout: fixed; font-size: 1px; line-height: 1px; opacity: 0; pointer-events: none; }
+.figview.gsheet { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; border-radius: 0; background: #0E0F0E; transform: none !important; opacity: 1 !important; padding: 0; }
+.figview .gsheet-body { padding: 0; height: 100%; overflow: hidden; }
+.figview-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.figview-img { max-width: 100%; max-height: 100%; background: #fff; will-change: transform; -webkit-user-drag: none; }
+.figview-close { position: absolute; top: calc(var(--safe-t, 0px) + 8px); right: 8px; color: #fff; background: rgba(0, 0, 0, .45); border-radius: 50%; }
 .g-table { overflow-x: auto; margin: .8em 0; }
 .g-table table { margin: 0; min-width: 60%; }
 .g-text .docx-mark { background: rgba(255, 235, 59, .32); }
