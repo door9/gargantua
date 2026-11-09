@@ -26,6 +26,9 @@ function levelize(values, tolerance) {
 export const MARK = { supOpen: String.fromCharCode(0xE020), supClose: String.fromCharCode(0xE021), boldOpen: String.fromCharCode(0xE022), boldClose: String.fromCharCode(0xE023), italOpen: String.fromCharCode(0xE024), italClose: String.fromCharCode(0xE025) };
 const BOLD_FONT = /bold|black|heavy|extrabold|semibold|demi|[-_ ,](?:b|bd|eb|sb|xb)$|gothicb$|명조b$|고딕b$|hy헤드라인|hygothic-extra|hy견고딕|hy견명조|headline/i;
 const ITAL_FONT = /italic|oblique|[-_ ,](?:i|it)$/i;
+const CLOSERS = ',.;:!?)\\]}”’」』';
+const NO_SPACE_BEFORE = new RegExp(` ([${CLOSERS}])`, 'g');
+const NO_SPACE_RICH = new RegExp(` ([${MARK.supOpen}${MARK.boldOpen}${MARK.italOpen}]*[${CLOSERS}])`, 'g');
 const RICH_HYPHEN = new RegExp(`-([${MARK.supClose}${MARK.boldClose}${MARK.italClose}]*)$`);
 
 const median = (arr) => {
@@ -604,8 +607,9 @@ function fragText(f, spaces) {
     rich += wrapRun(r, t);
     prev = r;
   }
-  f.text = s.replace(/[\s\u00a0]+/g, ' ').trim();
-  f.rich = rich.replace(/[\s\u00a0]+/g, ' ').trim();
+  // 쉼표·마침표·닫는 괄호 앞의 빈칸은 조판 틈이다(한글 조판기가 글자 사이를 벌려 '감소하였으며 , 이 중'처럼 뽑혔다)
+  f.text = s.replace(/[\s\u00a0]+/g, ' ').replace(NO_SPACE_BEFORE, '$1').trim();
+  f.rich = rich.replace(/[\s\u00a0]+/g, ' ').replace(NO_SPACE_RICH, '$1').trim();
   f.trailSpace = /\s$/.test(f.runs[f.runs.length - 1].s) || spaces.some((sp) => Math.abs(sp.y - f.y) < f.size * 0.5 && sp.x0 >= f.x1 - f.size * 0.3 && sp.x0 <= f.x1 + f.size * 0.5);
   f.spaceGaps = gaps;
   // 글머리표 뒤 본문이 시작하는 x(내어쓰기 맞춤용)

@@ -4,7 +4,7 @@ import { textIndex, textOf } from '../text.js';
 
 export const PARSER_VERSION = 5;
 // PDF 를 전자책으로 다시 짜는 방식을 바꾸면 올린다 — PDF 변환본만 다시 만든다(하이라이트·읽던 자리는 인용문·쪽으로 다시 찾는다)
-export const PDF_BOOK_VERSION = 1;
+export const PDF_BOOK_VERSION = 2;
 
 const PURIFY = {
   USE_PROFILES: { html: true, svg: true },
