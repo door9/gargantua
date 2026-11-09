@@ -278,6 +278,7 @@ export class PagedView {
       if (page < this.page) a = mid + 1; else b = mid;
     }
     // a: 이 쪽(또는 뒤)에서 시작하는 첫 칸. 바로 앞 칸이 이 쪽까지 이어질 수 있다
+    while (a < hi - 1 && !firstRect(rangeOfNode(idx.nodes[a]))) a++; // 화면에 안 그려지는 칸(문단 사이 줄바꿈)은 건너뛴다
     let o;
     const prevIdx = a - 1;
     if (prevIdx >= lo && prevIdx >= 0) {

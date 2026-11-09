@@ -151,6 +151,7 @@
 .g-text figure.g-fig { margin: 1em 0; }
 .g-text figure.g-fig img { display: block; margin: 0 auto; }
 .g-text figure.g-fig-full { margin: .4em 0; }
+.g-text figcaption.g-pageno { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; font-size: 1px; line-height: 1px; color: transparent; user-select: none; }
 .g-text img.g-fig-wait { background: var(--r-chip); }
 .g-text table.g-plain td { border: 0; padding: .15em .6em .15em 0; }
 .g-text p.g-title { text-align: left; text-indent: 0; font-weight: 800; line-height: 1.32; margin: .1em 0 .5em; }
@@ -200,7 +201,7 @@
 .pg-content :is(h1, h2, h3, h4, h5, h6) { break-after: avoid; }
 .pg-content :is(figure, table, pre, blockquote) { break-inside: avoid-column; }
 .pg-content .g-body { min-height: 100%; }
-.pg-end { display: inline-block; width: 1px; height: 1px; }
+.pg-end { display: block; width: 1px; height: 0; break-before: avoid; } /* 줄 칸을 차지하면 마지막 쪽이 꽉 찼을 때 빈 화면이 하나 더 생긴다 */
 .rd.pal-night .g-text [style] { color: inherit !important; background-color: transparent !important; }
 
 /* PDF */

@@ -951,6 +951,31 @@ export function analyzePage(page) {
       frames.push(t);
     }
   }
+  // 스캔 쪽의 표는 글자를 칸에 옮기지 않고 원본 모양 그대로 보여 준다 — 숫자를 잘못 읽을 수 있고, 칸 속 글은 인식기가 많이 놓친다
+  if (page.ocr) {
+    for (const t of realTables) {
+      picTables.push({ x0: Math.max(0, t.x0 - 2), y0: Math.max(0, t.y0 - 2), x1: Math.min(page.w, t.x1 + 2), y1: Math.min(page.h, t.y1 + 2), keep: true });
+      frames.push(t);
+    }
+    realTables.length = 0;
+    for (const n of page.numeric || []) {
+      if (!picTables.some((t) => (n.x0 + n.x1) / 2 >= t.x0 && (n.x0 + n.x1) / 2 <= t.x1 && (n.y0 + n.y1) / 2 >= t.y0 && (n.y0 + n.y1) / 2 <= t.y1)) picTables.push({ x0: Math.max(0, n.x0 - 3), y0: Math.max(0, n.y0 - 3), x1: Math.min(page.w, n.x1 + 3), y1: Math.min(page.h, n.y1 + 3), keep: true });
+    }
+    // 표 선이 흐려 네모 밖으로 빠진 숫자 줄을 표로 넣는다(붙어 있는 것부터 차례로)
+    for (const t of picTables) {
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const L of page.numLines || []) {
+          const h = L.y1 - L.y0;
+          if (L.y0 >= t.y0 - 1 && L.y1 <= t.y1 + 1) continue;
+          if (L.x0 < t.x1 && L.x1 > t.x0 && L.y0 < t.y1 + h * 1.8 && L.y1 > t.y0 - h * 1.8) {
+            t.y0 = Math.min(t.y0, L.y0 - 2); t.y1 = Math.max(t.y1, L.y1 + 2); t.x0 = Math.min(t.x0, L.x0 - 2); t.x1 = Math.max(t.x1, L.x1 + 2);
+            grew = true;
+          }
+        }
+      }
+    }
+  }
   // 표의 가로줄이 세로줄 밖까지 뻗어 있으면(행 머리 칸에 세로줄이 없는 표) 그 안의 글도 표다
   if (realTables.length) {
     const hs = mergeSegs((page.rules || []).filter((r) => r.h), 'y');
@@ -1025,7 +1050,36 @@ export function analyzePage(page) {
   for (const g of figs) els.push({ fig: g, x0: g.x0, x1: g.x1, top: g.y0, bot: g.y1, y: g.y0 });
   const regions = [];
   const hRules = mergeSegs((page.rules || []).filter((r) => r.h), 'y').map((r) => ({ y: r.v, a: r.a, b: r.b }));
-  xyCut(els, bbox(els.length ? els : [{ x0: 0, x1: page.w, top: 0, bot: page.h }]), regions, size, 0, { hRules });
+  if (page.regions?.length > 1) {
+    // 스캔 쪽은 그림에서 이미 단을 갈라 읽었다 — 그 덩어리별로 나눈다(글 조각의 틈으로 다시 가리면 양쪽 맞춤의 넓은 낱말 틈 때문에 단을 놓친다)
+    const groups = page.regions.map(() => []);
+    const extra = new Map(); // 덩어리 밖의 그림: 그 아래 덩어리 앞에 끼운다
+    for (const e of els) {
+      const cx = (e.x0 + e.x1) / 2, cy = (e.top + e.bot) / 2;
+      let k = page.regions.findIndex((r) => cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1);
+      if (k < 0 && (e.fig || e.table)) {
+        const at = page.regions.findIndex((r) => r.y0 >= e.bot - 2 && r.x0 < e.x1 && r.x1 > e.x0);
+        const key = at < 0 ? page.regions.length : at;
+        if (!extra.has(key)) extra.set(key, []);
+        extra.get(key).push(e);
+        continue;
+      }
+      if (k < 0) {
+        let best = Infinity;
+        page.regions.forEach((r, i) => {
+          const d = Math.max(0, r.x0 - cx, cx - r.x1) + Math.max(0, r.y0 - cy, cy - r.y1);
+          if (d < best) { best = d; k = i; }
+        });
+      }
+      groups[k].push(e);
+    }
+    for (let i = 0; i <= groups.length; i++) {
+      for (const e of extra.get(i) || []) regions.push({ els: [e], colBox: { x0: e.x0, x1: e.x1 } });
+      if (i < groups.length && groups[i].length) xyCut(groups[i], bbox(groups[i]), regions, size, 0, { hRules });
+    }
+  } else {
+    xyCut(els, bbox(els.length ? els : [{ x0: 0, x1: page.w, top: 0, bot: page.h }]), regions, size, 0, { hRules });
+  }
   // 영역 안: 같은 높이 조각은 한 줄로(탭으로 이어)
   const seq = [];
   for (const reg of regions) {
@@ -1041,7 +1095,7 @@ export function analyzePage(page) {
       if (g.table) { seq.push({ table: g.table, colBox: reg.colBox }); continue; }
       if (g.fig) { seq.push({ fig: g.fig, colBox: reg.colBox }); continue; }
       g.frags.sort((a, b) => a.x0 - b.x0);
-      const frs = rejoin(g.frags, page.spaces);
+      const frs = rejoin(g.frags, page.spaces, page.ocr ? 5 : 2.2); // 스캔 쪽은 단을 이미 갈랐으니 양쪽 맞춤의 넓은 틈도 낱말 사이다
       // 신문 문단 끝 줄 오른쪽에 붙은 '관련기사 A3면' 같은 안내는 따로 줄로(문단 잇기를 막지 않게)
       if (frs.length >= 2 && /^(?:관련\s*기사|관련\s*기획|▶\s*관련)/.test(frs[frs.length - 1].text)) {
         seq.push({ line: makeLine(frs.slice(0, -1)), colBox: reg.colBox });
@@ -1051,15 +1105,15 @@ export function analyzePage(page) {
       seq.push({ line: makeLine(frs), colBox: reg.colBox });
     }
   }
-  return { seq, size, w: page.w, h: page.h, frames, rotated: page.rotated || [], shapes: page.shapes || [], chars: runChars(runs), figs };
+  return { seq, size, w: page.w, h: page.h, frames, rotated: page.rotated || [], shapes: page.shapes || [], chars: runChars(runs), figs, ocr: !!page.ocr };
 }
 
 // 한 줄 안의 잘게 나눈 조각들: 틈이 글자 2.2개 폭 이하면 다시 하나로(띄어쓰기는 fragText 가 다시 판단)
-function rejoin(frags, spaces) {
+function rejoin(frags, spaces, reach = 2.2) {
   const out = [];
   let cur = null;
   for (const f of frags) {
-    if (cur && f.x0 - cur.x1 <= Math.max(cur.size, f.size) * 2.2) {
+    if (cur && f.x0 - cur.x1 <= Math.max(cur.size, f.size) * reach) {
       cur.runs.push(...f.runs);
       cur.x1 = Math.max(cur.x1, f.x1);
       cur.merged = true;
@@ -1097,6 +1151,44 @@ const PAGE_WORD = /^(?:page|p\.)\s*\d+(?:\s*(?:of|\/)\s*\d+)?$|^\d+\s*쪽$|^-?\s
 
 function hfKey(text) {
   return text.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// 스캔 쪽의 머리말·꼬리말: 인식기는 같은 머리말도 쪽마다 조금씩 다르게 읽는다('현장목소리'·'현잠목소리') — 글자가 거의 같은 줄끼리 묶어,
+// 쪽 위·아래 띠에서 세 쪽 이상 되풀이되면 머리말로 본다(본문 첫 줄은 쪽마다 다르다). 장마다 바뀌는 머리말도 이것으로 빠진다
+function markScanHeaders(pagesA) {
+  const bagOf = (s) => [...s.replace(/[\s\d]/g, '')].sort();
+  const common = (a, b) => {
+    let i = 0, j = 0, n = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { n++; i++; j++; } else if (a[i] < b[j]) i++; else j++;
+    }
+    return n;
+  };
+  const dice = (a, b) => (2 * common(a, b)) / (a.length + b.length);
+  const need = Math.min(3, Math.max(2, Math.ceil(pagesA.length * 0.4)));
+  const groups = { T: [], B: [] };
+  pagesA.forEach((p, pi) => {
+    if (!p.ocr) return;
+    for (const it of p.seq) {
+      const L = it.line;
+      if (!L || L.text.length > 60) continue;
+      const zone = L.y < p.h * 0.12 ? 'T' : L.y > p.h * 0.88 ? 'B' : null;
+      if (!zone) continue;
+      const bag = bagOf(L.text);
+      if (bag.length < 3) continue;
+      const g = groups[zone].find((x) => Math.abs(x.bag.length - bag.length) <= bag.length * 0.4 && dice(x.bag, bag) >= 0.7);
+      if (g) { g.lines.push(L); g.pages.add(pi); } else groups[zone].push({ bag, lines: [L], pages: new Set([pi]) });
+    }
+  });
+  for (const list of [groups.T, groups.B]) {
+    const strong = list.filter((g) => g.pages.size >= need);
+    for (const g of strong) for (const L of g.lines) L.hf = true;
+    // 머리말의 일부만 읽힌 줄('01 최신이슈 02 첨단기술 …' 중 앞부분만)
+    for (const g of list) {
+      if (g.pages.size >= need) continue;
+      if (strong.some((s) => g.bag.length < s.bag.length && common(g.bag, s.bag) / g.bag.length >= 0.85)) for (const L of g.lines) L.hf = true;
+    }
+  }
 }
 
 export function assemble(pagesA, { onProgress } = {}) {
@@ -1140,12 +1232,15 @@ export function assemble(pagesA, { onProgress } = {}) {
     }
   });
 
+  markScanHeaders(pagesA);
+
   // ── 쪽마다 같은 자리의 그림(로고·장식)은 머리말처럼 뺀다 ──
   const figKey = (g) => [g.x0, g.y0, g.x1, g.y1].map((v) => Math.round(v / 6)).join(',');
   const figCount = new Map();
   pagesA.forEach((p) => { for (const it of p.seq) if (it.fig && !it.fig.full) figCount.set(figKey(it.fig), (figCount.get(figKey(it.fig)) || 0) + 1); });
   const minFig = Math.max(3, Math.ceil(nPages * 0.3));
-  pagesA.forEach((p) => { p.seq = p.seq.filter((it) => !it.fig || it.fig.full || (figCount.get(figKey(it.fig)) || 0) < minFig); });
+  // 스캔 쪽의 표(keep)는 같은 자리에 되풀이돼도 내용이 다르다 — 빼지 않는다
+  pagesA.forEach((p) => { p.seq = p.seq.filter((it) => !it.fig || it.fig.full || it.fig.keep || (figCount.get(figKey(it.fig)) || 0) < minFig); });
 
   // ── 낱말 통계(줄 가운데 낱말) ──
   const stats = new WordStats();
@@ -1257,7 +1352,7 @@ export function assemble(pagesA, { onProgress } = {}) {
         const A = prev.line;
         const dy = L.y - A.y;
         const lead = pitch * L.size;
-        cont = shouldContinue(A, L, P, { right, left, lead, dy, sameCol: prev.colBox === it.colBox, normalSpace, listStart, body: p.size });
+        cont = shouldContinue(A, L, P, { right, left, lead, dy, sameCol: prev.colBox === it.colBox, normalSpace, listStart, body: p.size, ocr: !!p.ocr });
         if (!cont && dy > lead * 1.7) gap = 1;
       } else if (prev === null && blocks.length) {
         gap = 1;
@@ -1405,7 +1500,7 @@ function wrapHint(A, right, normalSpace) {
 }
 
 // 앞 줄 A 다음 줄 L 이 같은 문단인가
-function shouldContinue(A, L, P, { right, left, lead, dy, sameCol, normalSpace, listStart = isListStart, body = 0 }) {
+function shouldContinue(A, L, P, { right, left, lead, dy, sameCol, normalSpace, listStart = isListStart, body = 0, ocr = false }) {
   if (!sameCol) return false;
   if (A.tabbed || L.tabbed) return false;
   if (listStart(L.text) && !(/\d{4}\.\s*$/.test(A.text) && /^\d{1,2}\.\s*\d{1,2}/.test(L.text))) return false; // '2022.' + '12. 22자로'
@@ -1423,7 +1518,8 @@ function shouldContinue(A, L, P, { right, left, lead, dy, sameCol, normalSpace, 
   if (centered(A) && centered(L)) return A.x1 - A.x0 > width * 0.4;
   // 앞 줄이 일찍 끝났으면(다음 낱말이 들어갈 자리가 있었으면) 문단 끝
   const slack = rightOf(A, right) - A.x1;
-  if (slack > Math.max(L.firstWordW * 1.15 + A.size * 0.8, A.size * 1.6)) return false;
+  // (스캔 쪽: 오른쪽이 들쭉날쭉한 타자 문서는 낱말이 들어갈 자리가 있어도 줄을 바꿨다 — 문장이 안 끝났고 줄이 절반 넘게 찼으면 잇는다)
+  if (slack > Math.max(L.firstWordW * 1.15 + A.size * 0.8, A.size * 1.6) && !(ocr && unfinishedLine(A.text) && slack < width * 0.45)) return false;
   // 들여쓰기 맞춤
   const tol = Math.max(L.size * 0.7, 3);
   // 그림을 비켜 첫머리가 들쭉날쭉한 줄끼리는 첫머리를 견주지 않는다

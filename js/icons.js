@@ -8,6 +8,7 @@ const PATHS = {
   import: '<path d="M12 3v12"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>',
   back: '<path d="m15 5-7 7 7 7"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  scanText: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 9.5h8M8 12.5h8M8 15.5h5"/>',
   more: '<circle cx="12" cy="5.5" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="12" cy="18.5" r="1.1"/>',
   toc: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
   bookmark: '<path d="M6.5 3.5h11a.5.5 0 0 1 .5.5v16.5l-6-4-6 4V4a.5.5 0 0 1 .5-.5Z"/>',

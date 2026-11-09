@@ -5,7 +5,7 @@ import {
   state, saveAnn, removeAnn, restoreAnn, savePos, liveAnns, setDocReader, setApp, readerFor, addReadingTime, addReadingProgress,
   readingSpeed, flushPositions, flushStats, getFile,
 } from '../store.js';
-import { loadBook, loadResources, requireFile, loadPdfTexts } from '../docs.js';
+import { loadBook, loadResources, requireFile, loadPdfTexts, cachedBook } from '../docs.js';
 import { openPdf, pdfOutline, closePdf } from '../pdfdoc.js';
 import { textOf, offsetsFromRange, describe, resolveAnchor, offsetOfBoundary, textIndex } from '../text.js';
 import { rootFrom } from '../parse/common.js';
@@ -19,7 +19,8 @@ import { buildChapters, chapterAt, randomChapter, toGlobal, fromGlobal } from '.
 import { sheet, menu, popover, closePopovers, confirmDialog, closeAllOverlays } from '../ui/overlay.js';
 import * as panels from './panels.js';
 import { lookupMenu, citeText, noteEditor, tagsOf, shareQuoteCard } from './actions.js';
-import { fetchRemoteFile, isStale, whenFresh } from '../sync/sync.js';
+import { fetchRemoteFile, isStale, whenFresh, pullOcr, pushOcrIfBehind } from '../sync/sync.js';
+import { startOcr } from './ocrsheet.js';
 
 export const COLORS = [
   { name: '노랑', key: 'yellow' },
@@ -123,11 +124,22 @@ class Reader {
       // 찾기 결과 등에서 책 위치(구획·글자)로 왔으면 쪽으로 바꾸려고 책을 불러 둔다
       if (Number.isInteger(this.opts.loc?.s)) {
         try { this.bookRec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile }); this.book = this.bookRec.book.reflow === false ? null : this.bookRec.book; } catch { /* 책이 없으면 첫 쪽으로 */ }
+      } else {
+        // 메뉴(글자 인식)를 보여 줄지 알려고 — 변환은 하지 않는다
+        this.bookRec = await cachedBook(this.doc).catch(() => null);
       }
       return;
     }
     try {
-      const rec = await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
+      const status = { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile };
+      let rec = await loadBook(this.doc, status);
+      // 글자 인식이 필요한 문서: 다른 기기에서 읽어 둔 것이 있으면 받아 책을 다시 엮는다
+      const scan = rec.book.scan;
+      if (scan?.pages.length && scan.done < scan.pages.length) {
+        const added = await pullOcr(this.doc, { onStatus: status.onStatus }).catch(() => 0);
+        if (added) rec = await loadBook(this.doc, { ...status, force: true });
+      }
+      if (rec.book.scan?.done) pushOcrIfBehind(this.doc, rec.book.scan.done).catch(() => {});
       this.bookRec = rec;
       this.isPdf = rec.book.reflow === false || (pick !== 'book' && !!rec.book.preferOriginal);
     } catch (e) {
@@ -443,6 +455,39 @@ class Reader {
     this.setLoading(null);
     this.writePos({ view: kind, viewPick: true });
     toast(kind === 'paged' ? '전자책 보기' : '줄글 보기', { duration: 1200 });
+  }
+
+  // 글자 인식으로 책이 새로 엮였다 — open: 원본 쪽을 보던 중이면 전자책 보기로 넘어간다
+  async adoptBook(rec, { open = false } = {}) {
+    const wasBook = !this.isPdf;
+    const here = this.view?.currentLoc();
+    const page = wasBook && here && this.book?.pageStarts ? this.pageLocOf(here) : here;
+    this.bookRec = rec;
+    this.book = null;
+    this.chapters = null;
+    this.figures?.destroy();
+    this.figures = null;
+    if (rec.book.reflow === false) return;
+    if (wasBook) {
+      this.view?.destroy();
+      this.view = null;
+      this.resolved.clear();
+      this.clearSelection();
+      await this.loadText();
+      await this.mountView(this.initialView(), { loc: page ? this.bookLocOfPage(page.p, page.y) : { s: 0, o: 0 }, fresh: false });
+      this.updateFooter();
+    } else if (open) {
+      await this.switchPdfView(false);
+    }
+  }
+
+  // 글자 인식 메뉴: 글자 층이 없는 쪽이 남아 있을 때만. 책으로 잘 읽히는 문서의 그림 쪽 몇 장(표지 등)은 권하지 않는다
+  ocrMenuItem() {
+    const b = this.bookRec?.book;
+    const scan = b?.scan;
+    if (this.doc.format !== 'pdf' || !scan?.pages.length || scan.done >= scan.pages.length) return null;
+    if (b.reflow !== false && !b.preferOriginal && scan.pages.length < Math.max(3, b.pages * 0.1)) return null;
+    return { label: scan.done ? `글자 인식 이어 하기 (${scan.done}/${scan.pages.length}쪽)` : '글자 인식으로 전자책 만들기', icon: 'scanText', onClick: () => startOcr(this) };
   }
 
   // PDF: 전자책처럼 보기 ↔ 원본 쪽 보기(같은 자리에서 이어서)
@@ -1573,6 +1618,8 @@ class Reader {
       items.push({ divider: true });
       items.push({ label: this.isPdf ? '전자책처럼 보기' : '원본 PDF 쪽으로 보기', icon: this.isPdf ? 'pages' : 'file', onClick: () => this.switchPdfView(!this.isPdf) });
     }
+    const ocrItem = this.ocrMenuItem();
+    if (ocrItem) items.push({ divider: true }, ocrItem);
     items.push({ divider: true });
     items.push({ label: '하이라이트 · 메모', icon: 'highlight', onClick: () => this.showAnnotations() });
     items.push({ label: '책갈피 목록', icon: 'bookmarks', onClick: () => this.showBookmarks() });
@@ -1711,6 +1758,7 @@ class Reader {
     if (!this.alive) return;
     this.flush();
     this.alive = false;
+    this.ocrStop?.();
     clearInterval(this.ticker);
     for (const off of this.offs) off();
     if (this.tts) panels.stopSpeech(this);

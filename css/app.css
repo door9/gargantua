@@ -223,6 +223,11 @@ body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 }
 .gdialog .gsheet-body { padding-top: 0; }
 .gdialog-msg { font-size: 15px; line-height: 1.6; color: var(--ink-2); }
+.gocr { padding: 6px 0 4px; }
+.gocr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.gocr-note { font-size: 13px; color: var(--ink-3, var(--ink-2)); text-align: right; }
+.gocr-bar { height: 4px; margin-top: 10px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.gocr-bar i { display: block; height: 100%; width: 0; background: var(--ink-2); transition: width .3s; }
 .gdialog-msg p { margin: 0 0 8px; }
 .gprompt-body { display: grid; gap: 10px; }
 .gprompt-quote { margin: 0; padding: 10px 14px; border-left: 3px solid var(--horizon); background: var(--surface-2); border-radius: 0 10px 10px 0; font-family: var(--serif); font-size: 14.5px; line-height: 1.65; color: var(--ink-2); max-height: 150px; overflow: auto; white-space: pre-wrap; }

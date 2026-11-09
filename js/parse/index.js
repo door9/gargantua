@@ -41,7 +41,7 @@ export async function sniffFormat(blob, name) {
 }
 
 // 문서 → { book, texts, cover }
-export async function parseDocument(blob, format, { onProgress } = {}) {
+export async function parseDocument(blob, format, { onProgress, ocr = null } = {}) {
   const bytes = format === 'pdf' ? null : new Uint8Array(await blob.arrayBuffer());
   if (format === 'pdf' ? !blob.size : !bytes.length) throw new ParseError('내용이 없는 파일입니다.');
   let result;
@@ -49,7 +49,7 @@ export async function parseDocument(blob, format, { onProgress } = {}) {
   else if (format === 'docx') result = await parseDocx(bytes);
   else if (format === 'md') result = parseMarkdown(bytes);
   else if (format === 'txt') result = parseText(bytes);
-  else if (format === 'pdf') result = await (await import('./pdf.js')).parsePdfBook(blob, { onProgress }); // 낱말 통계(약 0.7MB)가 들어 있어 쓸 때만 불러온다
+  else if (format === 'pdf') result = await (await import('./pdf.js')).parsePdfBook(blob, { onProgress, ocr }); // 낱말 통계(약 0.7MB)가 들어 있어 쓸 때만 불러온다
   else throw new ParseError('지원하지 않는 형식입니다.');
   const { book, cover } = result;
   // 글이 거의 없는 PDF(스캔본 등): 책으로 만들 것이 없다 — 원본 쪽 보기로 연다

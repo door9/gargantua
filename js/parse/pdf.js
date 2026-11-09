@@ -3,6 +3,7 @@
 // 그림은 자리만 적어 두고(book.figs) 읽을 때 원본 쪽에서 오려 그린다(reader/pdffigs.js).
 import { pdfjs, openPdf, closePdf, pdfOutline } from '../pdfdoc.js';
 import { pageFromPdfjs, analyzePage, assemble, MARK } from '../pdfx/pdflayout.js';
+import { pageFromRecord, unskewRect } from '../pdfx/ocr.js';
 import { resolveSoftBreaks, isListStart } from '../pdfx/joiner.js';
 import { loadDictionary, unloadDictionary } from '../pdfx/dict.js';
 import { purify } from './common.js';
@@ -33,8 +34,39 @@ function fontNamesOf(page, tc) {
   return out;
 }
 
-// PDF 를 쪽마다 분석해 책으로
-export async function parsePdfBook(blob, { onProgress } = {}) {
+// 글자 인식이 필요한 쪽인가(DRE 와 같은 기준)
+// - 글자가 하나도 없는 쪽: 그림·도형·글자 그리기가 하나라도 있으면(스캔, 글자표 없는 글꼴, 선으로 그린 글자)
+// - 글자가 조금 있는 쪽(20자 미만): 쪽의 40% 이상을 덮는 큰 그림이나 도형 300개 이상이 있을 때만(제목 몇 글자 + 로고뿐인 표지는 글자 그대로)
+const SCAN_MAX_CHARS = 20;
+function wantOcr(ops, OPS, chars, pageArea) {
+  const IMG = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObjectGroup,
+    OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintImageMaskXObjectGroup].filter((x) => x != null));
+  const TEXT = new Set([OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText].filter((x) => x != null));
+  const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  let ink = false, paths = 0, bigImage = false;
+  const { fnArray, argsArray } = ops;
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i], args = argsArray[i];
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+    else if (fn === OPS.transform) ctm = mul(ctm, args);
+    else if (fn === OPS.paintFormXObjectBegin) { stack.push(ctm); if (args?.[0]?.length === 6) ctm = mul(ctm, args[0]); }
+    else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+    else if (IMG.has(fn)) {
+      ink = true;
+      // 그림은 단위 정사각형을 현재 변환으로 늘려 그린다 → 넓이 = |행렬식|
+      if (Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]) >= pageArea * 0.4) bigImage = true;
+    } else if (fn === OPS.constructPath) { ink = true; paths++; }
+    else if (fn === OPS.shadingFill || fn === OPS.paintSolidColorImageMask) ink = true;
+    else if (TEXT.has(fn) && !chars) ink = true;
+  }
+  return chars ? bigImage || paths >= 300 : ink;
+}
+
+// PDF 를 쪽마다 분석해 책으로. ocr: 글자 인식해 둔 쪽(쪽 번호 → 보관 기록)
+export async function parsePdfBook(blob, { onProgress, ocr = null } = {}) {
   await loadDictionary();
   const lib = await pdfjs();
   const pdf = await openPdf(blob, { fontExtraProperties: true });
@@ -43,21 +75,29 @@ export async function parsePdfBook(blob, { onProgress } = {}) {
     const analyzed = [];
     let seen = 0;
     let junk = 0; // 글꼴에 글자표가 없어 깨진 글자(사용 영역·대체 문자)
+    const scan = []; // 글자 인식이 필요한 쪽(글자 층이 없거나 깨진 쪽)
     for (let i = 1; i <= n; i++) {
       const page = await pdf.getPage(i);
       try {
         const viewport = page.getViewport({ scale: 1 });
         const tc = await page.getTextContent();
+        const rec = ocr?.get(i) || null;
+        let pageSeen = 0, pageJunk = 0;
         for (const it of tc.items) for (const ch of it.str || '') {
           const c = ch.codePointAt(0);
           if (c <= 32) continue;
-          seen++;
-          if (c === 0xFFFD || (c >= 0xE000 && c <= 0xF8FF)) junk++;
+          pageSeen++;
+          if (c === 0xFFFD || (c >= 0xE000 && c <= 0xF8FF)) pageJunk++;
         }
+        // 글자 인식해 둔 쪽의 깨진 글자는 쓰지 않으니 세지 않는다
+        if (!rec) { seen += pageSeen; junk += pageJunk; }
         let ops = null;
         try { ops = await page.getOperatorList(); } catch { ops = null; }
-        const data = pageFromPdfjs(tc, ops, viewport, lib.OPS, fontNamesOf(page, tc));
+        if (ops && ((pageSeen < SCAN_MAX_CHARS && wantOcr(ops, lib.OPS, pageSeen, viewport.width * viewport.height)) || (pageSeen >= SCAN_MAX_CHARS && pageJunk > pageSeen * 0.15))) scan.push(i);
+        const data = rec ? pageFromRecord(rec) : pageFromPdfjs(tc, ops, viewport, lib.OPS, fontNamesOf(page, tc));
         const a = analyzePage(data);
+        // 기울어진 쪽은 바로 세워 읽었다 — 그림은 원본 쪽에서 오리므로 자리를 원본 기준으로 되돌린다
+        if (rec?.rot) for (const g of a.figs) Object.assign(g, unskewRect(g, rec.rot, a.w, a.h));
         a.spaces = data.spaces;
         analyzed.push(a);
       } finally {
@@ -68,9 +108,12 @@ export async function parsePdfBook(blob, { onProgress } = {}) {
     }
     const textPages = analyzed.filter((a) => a.chars >= 30).length;
     const total = analyzed.reduce((sum, a) => sum + a.chars, 0);
-    // 글자가 거의 없는 PDF(스캔본 등)는 다시 짤 글이 없다 — 원본 쪽 보기로
-    if (textPages < Math.max(1, n * 0.5) || total < 200 || junk > seen * 0.15) {
-      return { book: { format: 'pdf', title: '', author: '', lang: '', sections: [{ html: '', bodyClass: 'pdf', styles: [] }], styles: {}, figs: {}, pages: n, reflow: false }, cover: null };
+    const scanInfo = { pages: scan, done: scan.filter((p) => ocr?.has(p)).length };
+    const ocrChars = analyzed.reduce((sum, a) => sum + (a.ocr ? a.chars : 0), 0);
+    // 글자가 거의 없는 PDF(스캔본 등)는 다시 짤 글이 없다 — 글자 인식을 하기 전까지는 원본 쪽 보기로
+    const noText = textPages < Math.max(1, n * 0.5) || total < 200 || junk > seen * 0.15;
+    if (noText && !ocrChars) {
+      return { book: { format: 'pdf', title: '', author: '', lang: '', sections: [{ html: '', bodyClass: 'pdf', styles: [] }], styles: {}, figs: {}, pages: n, reflow: false, scan: scanInfo }, cover: null };
     }
     const { blocks } = assemble(analyzed);
     const holder = { blocks };
@@ -79,10 +122,12 @@ export async function parsePdfBook(blob, { onProgress } = {}) {
     const wide = analyzed.filter((a) => a.w > a.h * 1.15).length;
     // 슬라이드처럼 가로로 눕힌 쪽에 글이 적은 문서는 쪽 모양 자체가 내용이다 — 처음엔 원본 쪽으로(메뉴에서 바꿀 수 있다)
     const slideLike = wide >= n * 0.7 && total / n < 700;
-    const book = buildBook(holder.blocks, analyzed, outline);
+    const book = buildBook(holder.blocks, analyzed, outline, new Set(scan));
     book.pages = n;
     book.reflow = true;
-    book.preferOriginal = slideLike;
+    book.scan = scanInfo;
+    // 글자 인식을 하다 멈춘 스캔본은 다 읽기 전까지 원본 쪽으로(메뉴에서 바꿀 수 있다)
+    book.preferOriginal = ocrChars ? noText && scanInfo.done < scan.length : slideLike;
     onProgress?.(1);
     return { book, cover: null };
   } finally {
@@ -160,7 +205,7 @@ const DOTS = /[.·…‥・ㆍ]{6,}/g; // 목차의 긴 점선
 const SPACED_WORDS = new Set(['ABSTRACT', 'KEYWORD', 'KEYWORDS', 'CONTENTS', 'REFERENCES', 'INTRODUCTION', 'CONCLUSION', 'SUMMARY']);
 
 // ── 책 엮기 ──
-function buildBook(blocks, analyzed, outline) {
+function buildBook(blocks, analyzed, outline, scanned = new Set()) {
   // ① 각주를 따로 모으고, 쪽·그림을 넘어 이어지는 문단을 하나로
   const body = [];
   const notes = new Map();
@@ -422,7 +467,9 @@ function buildBook(blocks, analyzed, outline) {
       const g = b.fig;
       figs[key] = { p: b.pg - 1, x0: +g.x0.toFixed(1), y0: +g.y0.toFixed(1), x1: +g.x1.toFixed(1), y1: +g.y1.toFixed(1) };
       const w = Math.round((g.x1 - g.x0) * 1.6), h = Math.round((g.y1 - g.y0) * 1.6);
-      items.push({ html: `<figure class="g-fig${g.full ? ' g-fig-full' : ''}">${pageMark(b.pg)}<img data-g-src="${key}" width="${w}" height="${h}" alt=""></figure>`, chars: 400, head: 0, notes: [] });
+      // 아직 글자 인식 전인 쪽은 쪽 번호를 안 보이게 남긴다 — 글자가 전혀 없으면 원본 쪽 ↔ 전자책 위치를 맞출 수 없다(모두 맨 앞이 된다)
+      const label = g.full && !analyzed[b.pg - 1]?.ocr && scanned.has(b.pg) ? `<figcaption class="g-pageno">${b.pg}</figcaption>` : '';
+      items.push({ html: `<figure class="g-fig${g.full ? ' g-fig-full' : ''}">${pageMark(b.pg)}${label}<img data-g-src="${key}" width="${w}" height="${h}" alt=""></figure>`, chars: 400, head: 0, notes: [] });
       continue;
     }
     if (b.t === 'tbl') {

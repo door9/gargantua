@@ -4,7 +4,7 @@ import { db, kvGet, kvSet, dropDocCache } from '../db.js';
 import { state, liveDocs, putFile, getFile, localFileHashes, noteFileStored } from '../store.js';
 import { emit, on, debounce, dayKey, sha256Hex, uid, now } from '../util.js';
 import * as dbx from './dropbox.js';
-import { prepareMissing } from '../docs.js';
+import { prepareMissing, ocrRecords, ocrDonePages, putOcrPage } from '../docs.js';
 
 export const REMOTE = '/library.json.gz';
 const FILES = '/files';
@@ -480,6 +480,54 @@ async function keepLocal() {
 }
 export function keepLocalNow() {
   return keepLocal();
+}
+
+// 글자 인식 결과는 다른 기기와 나눈다 — 휴대폰에서 읽으면 오래 걸리므로 컴퓨터에서 읽은 것을 그대로 쓰게. 같은 원본이면 같은 파일(원본 해시가 이름)
+const OCR_DIR = '/ocr';
+const ocrPath = (doc) => `${OCR_DIR}/${doc.fileHash}.json.gz`;
+const ocrRevKey = (doc) => `ocrRev:${doc.fileHash}`;
+const ocrCountKey = (doc) => `ocrCount:${doc.fileHash}`;
+
+// 다른 기기가 읽은 쪽 받아 합치기 → 새로 받은 쪽 수
+export async function pullOcr(doc, { onStatus } = {}) {
+  if (navigator.onLine === false || !(await dbx.isConnected())) return 0;
+  const path = ocrPath(doc);
+  // 연결이 나쁠 때 문서 열기를 붙잡지 않게 — 있는지 묻는 것만 짧게 기다린다
+  const m = await Promise.race([dbx.meta(path), new Promise((resolve) => { setTimeout(() => resolve(null), 5000); })]);
+  if (!m || m.rev === await kvGet(ocrRevKey(doc), null)) return 0;
+  onStatus?.('다른 기기에서 읽은 글 받는 중');
+  const got = await dbx.download(path);
+  if (!got) return 0;
+  const data = await decodePayload(got.blob);
+  const have = await ocrDonePages(doc);
+  let added = 0;
+  for (const [p, rec] of Object.entries(data?.pages || {})) {
+    if (have.has(Number(p))) continue;
+    await putOcrPage(doc, Number(p), rec);
+    added++;
+  }
+  await kvSet(ocrRevKey(doc), got.meta?.rev || m.rev);
+  await kvSet(ocrCountKey(doc), have.size + added);
+  return added;
+}
+
+// 이 기기에서 읽은 쪽 올리기(다른 기기가 올린 쪽은 먼저 받아 합친다)
+export async function pushOcr(doc) {
+  if (navigator.onLine === false || !(await dbx.isConnected())) return false;
+  await pullOcr(doc);
+  const recs = await ocrRecords(doc);
+  if (!recs.size) return false;
+  const blob = await encodePayload({ app: APP_ID, kind: 'ocr', fileHash: doc.fileHash, savedAt: Date.now(), pages: Object.fromEntries(recs) });
+  const res = await dbx.upload(ocrPath(doc), blob, { mode: 'overwrite' });
+  await kvSet(ocrRevKey(doc), res.rev);
+  await kvSet(ocrCountKey(doc), recs.size);
+  return true;
+}
+
+// 올리지 못한 쪽이 남아 있으면(읽을 때 인터넷이 끊겼으면) 올린다
+export async function pushOcrIfBehind(doc, localCount) {
+  if ((await kvGet(ocrCountKey(doc), 0)) >= localCount) return false;
+  return pushOcr(doc);
 }
 
 // 이 기기에 없는 원본을 Dropbox에서 받아 오기

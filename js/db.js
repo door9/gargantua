@@ -105,9 +105,9 @@ export const db = {
 
 // 문서의 변환본과 그 그림(fig:문서id:…)을 함께 지운다
 export async function dropDocCache(docId) {
-  const prefix = `fig:${docId}:`;
+  const prefixes = [`fig:${docId}:`, `ocr:${docId}:`];
   const keys = await db.getAllKeys('cache');
-  await db.delMany('cache', [docId, ...keys.filter((k) => String(k).startsWith(prefix))]);
+  await db.delMany('cache', [docId, ...keys.filter((k) => prefixes.some((p) => String(k).startsWith(p)))]);
 }
 
 export async function kvGet(key, fallback = null) {

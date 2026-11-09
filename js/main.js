@@ -12,7 +12,7 @@ import { runGate, closeGate, resumeGate } from './ui/bootgate.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '003cc5af29';
+export const BUILD = 'a1318caf54';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -311,7 +311,7 @@ async function boot() {
   closeGate();
   // 화면 부품을 지금 판으로 모두 불러 둔 뒤에 새 버전을 살핀다(새 서비스워커는 곧바로 새 파일을 내주므로
   // 나중에 처음 여는 화면이 새 판 부품이 되어 옛 부품과 섞이지 않게)
-  await Promise.all([...Object.values(VIEWS).map((v) => v.load().catch(() => null)), import('./parse/pdf.js').catch(() => null)]);
+  await Promise.all([...Object.values(VIEWS).map((v) => v.load().catch(() => null)), import('./parse/pdf.js').catch(() => null), import('./parse/ocrrun.js').catch(() => null)]);
   registerSW();
   const refreshSoon = debounce(() => { refreshView(); updateNav(); }, 400);
   on('docs', refreshSoon);

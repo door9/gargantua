@@ -101,16 +101,48 @@ export async function importOne(blob, name, { onStatus, id, addedAt, title } = {
   return { name, doc };
 }
 
-// 변환본 불러오기(없거나 낡았으면 원본에서 다시 변환)
-export async function loadBook(doc, { onStatus, fetchFile } = {}) {
+// 지금 판의 변환본이 있으면(변환은 하지 않는다)
+export async function cachedBook(doc) {
+  const c = await db.get('cache', doc.id);
+  return c && c.fileHash === doc.fileHash && c.pv === (doc.format === 'pdf' ? PDF_BOOK_VERSION : PARSER_VERSION) && c.book ? c : null;
+}
+
+// 글자 인식 결과(쪽마다 보관 — 책을 다시 엮어도 다시 읽지 않게)
+const ocrId = (docId, p) => `ocr:${docId}:${p}`;
+async function ocrKeys(doc) {
+  const prefix = `ocr:${doc.id}:`;
+  return (await db.getAllKeys('cache')).filter((k) => String(k).startsWith(prefix));
+}
+export async function putOcrPage(doc, p, rec) {
+  await db.put('cache', { docId: ocrId(doc.id, p), fileHash: doc.fileHash, p, rec });
+}
+export async function ocrDonePages(doc) {
+  const prefix = `ocr:${doc.id}:`;
+  return new Set((await ocrKeys(doc)).map((k) => Number(String(k).slice(prefix.length))));
+}
+// 쪽 번호 → 기록
+export async function ocrRecords(doc) {
+  const out = new Map();
+  for (const key of await ocrKeys(doc)) {
+    const row = await db.get('cache', key);
+    if (row?.fileHash === doc.fileHash && row.rec) out.set(row.p, row.rec);
+  }
+  return out;
+}
+
+// 변환본 불러오기(없거나 낡았으면 원본에서 다시 변환, force: 글자 인식을 더 했을 때 등 — 무조건 다시 엮는다)
+export async function loadBook(doc, { onStatus, fetchFile, force = false } = {}) {
   const pdf = doc.format === 'pdf';
   const version = pdf ? PDF_BOOK_VERSION : PARSER_VERSION;
   const cached = await db.get('cache', doc.id);
-  if (cached && cached.fileHash === doc.fileHash && cached.pv === version && cached.book) return cached;
+  // 글자 없는 PDF 의 옛 기록에는 글자 인식할 쪽 목록이 없다 — 그것만 다시 살핀다
+  const stale = pdf && cached?.book?.reflow === false && !cached.book.scan;
+  if (!force && !stale && cached && cached.fileHash === doc.fileHash && cached.pv === version && cached.book) return cached;
   const blob = await requireFile(doc, { onStatus, fetchFile });
   const label = pdf ? PDF_LABEL : '문서 변환 중';
   onStatus?.(label);
-  const { book, texts, cover } = await parseDocument(blob, doc.format, { onProgress: (p) => onStatus?.(`${label} ${Math.round(p * 100)}%`) });
+  const ocr = pdf ? await ocrRecords(doc) : null;
+  const { book, texts, cover } = await parseDocument(blob, doc.format, { ocr, onProgress: (p) => onStatus?.(`${label} ${Math.round(p * 100)}%`) });
   const rec = { docId: doc.id, fileHash: doc.fileHash, pv: version, book, texts };
   // 쪽별 글(원본 쪽 보기·하이라이트)은 변환 방식과 상관없다 — 그대로 둔다. 그림은 자리가 바뀌었을 수 있어 다시 그린다
   if (pdf && cached?.fileHash === doc.fileHash && cached.pdfTexts) rec.pdfTexts = cached.pdfTexts;
