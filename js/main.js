@@ -1,7 +1,7 @@
 // 앱 시작·화면 전환·설치 앱 기능(공유로 받기, 파일 열기)
 import { iconSprite, ico } from './icons.js';
 import { openDb, db } from './db.js';
-import { initStore, state, setApp, flushPositions } from './store.js';
+import { initStore, state, setApp, flushPositions, setCategory } from './store.js';
 import { h, toast, on, debounce } from './util.js';
 import { handlePopState, closeAllOverlays, whenHistorySettled, overlayCount } from './ui/overlay.js';
 import { openReader, closeReader, currentReader } from './reader/index.js';
@@ -12,7 +12,7 @@ import { runGate, closeGate, resumeGate } from './ui/bootgate.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = '99a8e4bd45';
+export const BUILD = '716360179d';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
@@ -148,7 +148,7 @@ function bindDrop() {
     hide();
     if (!files.length) return;
     e.preventDefault();
-    runImport(files);
+    runImport(files, { category: currentView === 'library' ? currentModule?.currentCategory?.() || '' : '' });
   });
 }
 
@@ -162,7 +162,7 @@ export function runImport(files, opts = {}) {
   return job;
 }
 
-async function importNow(files, { openSingle = true } = {}) {
+async function importNow(files, { openSingle = true, category = '' } = {}) {
   const status = h('div', { class: 'import-status' }, h('div', { class: 'spinner' }), h('span', null, '가져오는 중'));
   document.body.append(status);
   let results = [];
@@ -174,6 +174,8 @@ async function importNow(files, { openSingle = true } = {}) {
   const ok = results.filter((r) => r.doc && !r.duplicate);
   const dup = results.filter((r) => r.duplicate);
   const bad = results.filter((r) => r.error);
+  // 카테고리를 보던 중에 넣은 문서는 그 카테고리로(이미 서재에 있던 문서도 옮긴다)
+  if (category) await setCategory(results.filter((r) => r.doc).map((r) => r.doc.id), category);
   if (bad.length) toast(`${bad[0].name}: ${bad[0].error}${bad.length > 1 ? ` 외 ${bad.length - 1}개` : ''}`, { duration: 6000 });
   else if (dup.length && !ok.length) toast('이미 서재에 있는 문서입니다.', { action: '열기', onAction: () => openDoc(dup[0].doc.id) });
   else if (ok.length) toast(ok.length === 1 ? '서재에 추가했습니다.' : `문서 ${ok.length}개를 추가했습니다.`);
@@ -230,7 +232,9 @@ function registerSW() {
   // 다시 로그인하고 돌아온 주소(?login=1)는 지운다
   if (new URLSearchParams(location.search).has('login')) history.replaceState(null, '', location.pathname + location.hash);
   // Cloudflare 잠금(Access) 로그인이 만료되면 앱은 저장본으로 열리지만 새 버전을 못 받는다 — 알리고 다시 로그인하게 한다
-  const loginExpired = () => fetch('sw.js', { cache: 'no-store', redirect: 'manual' }).then((res) => res.type === 'opaqueredirect').catch(() => false);
+  // (인터넷이 없으면 묻지 않는다 — 헛요청이 실패하며 오류만 남긴다)
+  const loginExpired = () => (navigator.onLine === false ? Promise.resolve(false)
+    : fetch('sw.js', { cache: 'no-store', redirect: 'manual' }).then((res) => res.type === 'opaqueredirect').catch(() => false));
   let loginAsked = false;
   navigator.serviceWorker.register('sw.js').then((reg) => {
     const check = async () => {

@@ -316,6 +316,37 @@ body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 .cover.gen .cv-f { font-size: 8px; letter-spacing: .14em; opacity: .7; font-weight: 800; position: relative; z-index: 1; }
 .doc-card .cover.gen .cv-t { font-size: 8.5px; }
 .hero .cover.gen .cv-t { font-size: 11px; }
+/* 카테고리(서재 묶음): 목록에서는 표지 셋을 겹친 카드, 표지 보기에서는 네 칸 모음 */
+.cat-stack { position: relative; width: 60px; height: 74px; flex: none; }
+.cat-stack .cover { position: absolute; }
+.cat-ico { display: inline-flex; vertical-align: -3px; margin-right: 5px; color: var(--muted); }
+.cat-ico .ico { width: 16px; height: 16px; }
+.cat-head .cat-title { display: flex; align-items: center; min-width: 0; }
+.cat-head .cat-title .cat-ico .ico { width: 21px; height: 21px; }
+.cat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-incat { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin-bottom: 2px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.doc-incat .ico { width: 13px; height: 13px; flex: none; }
+.cat-mosaic { width: 100%; aspect-ratio: 5 / 7; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 5px; padding: 7px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); box-sizing: border-box; }
+.doc-tile .cat-mosaic .cover { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, .14); }
+.cat-mosaic .cover.gen { padding: 10%; }
+.cat-mosaic .cover.gen .cv-t { font-size: 6.5px; -webkit-line-clamp: 3; }
+.cat-mosaic .cover.gen .cv-f { display: none; }
+.cat-count { font-size: 12px; color: var(--muted); }
+.cat-make, .cat-move, .pick { display: grid; gap: 10px; }
+.cat-make-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.pick-tools { display: flex; align-items: center; gap: 8px; }
+.pick-count { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pick-list { display: grid; gap: 1px; align-content: start; max-height: min(52vh, 460px); overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.pick-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px; cursor: pointer; min-width: 0; font-weight: 400; }
+.pick-row:hover { background: var(--surface-2); }
+.pick-row input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--ink); }
+.pick-title { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row small { flex: none; max-width: 38%; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-pick { display: grid; gap: 1px; max-height: 40vh; overflow-y: auto; }
+.cat-pick-row { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; padding: 11px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: 15px; font-weight: 400; text-align: left; cursor: pointer; }
+.cat-pick-row:hover { background: var(--surface-2); }
+.cat-pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-pick-row small { flex: none; font-size: 12.5px; color: var(--muted); }
 .cloud-chip { position: absolute; right: 4px; bottom: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; display: grid; place-items: center; z-index: 2; }
 .cloud-chip .ico { width: 13px; height: 13px; }
 .fab { position: fixed; right: 18px; bottom: calc(var(--nav-h) + var(--safe-b) + 16px); z-index: 15; height: 52px; padding: 0 20px 0 16px; border-radius: 26px; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 8px 22px rgba(41, 92, 72, .35); }

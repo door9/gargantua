@@ -323,12 +323,26 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
     if (!r?.id) continue;
     remoteIds.docs.add(r.id);
     const l = state.docs.get(r.id);
+    // 카테고리는 문서 기록과 따로 정한 시각(catAt)이 늦은 쪽을 쓴다 — 동기화 전인 기기에서 이름만 바꾼 기록이 이겨도
+    // 이쪽에서 정한 카테고리가 되돌아가지 않게(합친 기록은 시각을 올려 다시 올린다)
+    const catWins = (a, b) => a && b && !a.deleted && !b.deleted && (a.catAt || 0) > (b.catAt || 0);
     if (take(l, r)) {
-      state.docs.set(r.id, r);
-      putDocs.push(r);
+      const rec = catWins(l, r) ? { ...r, category: l.category, catAt: l.catAt, updatedAt: (r.updatedAt || 0) + 1 } : r;
+      if (rec !== r) needUpload = true;
+      state.docs.set(r.id, rec);
+      putDocs.push(rec);
       changed = true;
       if (r.deleted && l && !l.deleted) removedDocs.push(l);
-    } else if ((l.updatedAt || 0) > (r.updatedAt || 0)) needUpload = true;
+    } else {
+      if ((l.updatedAt || 0) > (r.updatedAt || 0)) needUpload = true;
+      if (catWins(r, l)) {
+        const rec = { ...l, category: r.category, catAt: r.catAt, updatedAt: Math.max(l.updatedAt || 0, r.updatedAt || 0) + 1 };
+        state.docs.set(r.id, rec);
+        putDocs.push(rec);
+        changed = true;
+        needUpload = true;
+      }
+    }
   }
   for (const r of data.pos || []) {
     if (!r?.docId) continue;

@@ -121,6 +121,36 @@ export async function saveDoc(doc, { silent = false } = {}) {
   return rec;
 }
 
+// ── 카테고리(서재 묶음) ──
+// 문서 기록에 이름(category)과 정한 시각(catAt)을 단다. 카테고리는 그 이름을 단 문서가 있을 때만 있다(빈 카테고리 없음).
+// 동기화는 문서 기록과 함께 — 다른 기기에서 이름만 바꾼 기록이 이겨도 카테고리는 catAt 이 늦은 쪽을 쓴다(sync.js applyRemote)
+export const categoryOf = (d) => (d && !d.deleted ? String(d.category || '').trim() : '');
+export const cleanCategoryName = (name) => String(name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+export function categoryMap() {
+  const out = new Map();
+  for (const d of liveDocs()) {
+    const c = categoryOf(d);
+    if (!c) continue;
+    if (!out.has(c)) out.set(c, []);
+    out.get(c).push(d);
+  }
+  return out;
+}
+// 문서들을 카테고리에 넣는다(name 이 비면 카테고리에서 뺀다) → 바뀐 문서 수
+export async function setCategory(ids, name) {
+  const cat = cleanCategoryName(name);
+  const t = now();
+  let n = 0;
+  for (const id of ids) {
+    const d = state.docs.get(id);
+    if (!d || d.deleted || categoryOf(d) === cat) continue;
+    await saveDoc({ id, category: cat, catAt: t }, { silent: true });
+    n++;
+  }
+  if (n) emit('docs', {});
+  return n;
+}
+
 export async function saveInfo(info) {
   const prev = state.info.get(info.docId);
   const rec = { ...prev, ...info };
