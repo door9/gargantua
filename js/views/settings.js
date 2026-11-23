@@ -84,7 +84,7 @@ async function fill() {
   body.append(section('앱 정보', null,
     row('Gargantua', `웹 앱 ${APP_VERSION} (${BUILD}) · BEYOND THE EVENT HORIZON`),
     row('개인정보', null, infoButtonWide('<p>문서와 독서 기록은 이 기기 안에서만 처리됩니다. 개발자 서버는 없습니다.</p><p>Dropbox를 연결하면 문서 원본과 기록이 <b>본인의 Dropbox 앱 전용 폴더</b>(Apps/Gargantua Door 9 Labs)로만 전송됩니다. 연결 해제는 이 기기의 연결 정보만 지웁니다.</p><p>"찾아보기"를 누르면 고른 낱말이 해당 사전·검색 사이트로 전달됩니다.</p>')),
-    row('사용한 공개 부품', null, infoButtonWide('<p>pdf.js (Apache-2.0), fflate (MIT), DOMPurify (Apache-2.0/MPL-2.0), marked (MIT). 사용 허가 문서는 앱 안 vendor/licenses 폴더에 함께 있습니다.</p>'))));
+    row('사용한 공개 부품', null, infoButtonWide('<p>pdf.js (Apache-2.0), fflate (MIT), DOMPurify (Apache-2.0/MPL-2.0), marked (MIT), mecab-ko-dic 사전 (Apache-2.0, PDF 줄 잇기), tesseract.js·Tesseract OCR (Apache-2.0)·Leptonica (BSD-2-Clause)와 한국어·영어 인식 자료 (Apache-2.0, 글자 인식). 사용 허가 문서는 앱 안 vendor/licenses·vendor/mecab-ko-dic·vendor/tesseract 폴더에 함께 있습니다.</p>'))));
 }
 
 function infoButtonWide(html) {

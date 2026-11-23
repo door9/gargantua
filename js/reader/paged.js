@@ -278,9 +278,13 @@ export class PagedView {
       if (page < this.page) a = mid + 1; else b = mid;
     }
     // a: 이 쪽(또는 뒤)에서 시작하는 첫 칸. 바로 앞 칸이 이 쪽까지 이어질 수 있다
-    while (a < hi - 1 && !firstRect(rangeOfNode(idx.nodes[a]))) a++; // 화면에 안 그려지는 칸(문단 사이 줄바꿈)은 건너뛴다
+    // 화면에 안 그려지는 칸(문단 사이 줄바꿈)은 건너뛴다 — 뒤로는 이 쪽 첫 글 칸까지, 앞으로는 이 쪽까지 이어질 수 있는 앞 글 칸까지
+    // (앞쪽을 줄바꿈 칸에서 멈추면 앞 문단이 이 쪽으로 이어진 줄을 놓쳐 '이 쪽 첫 글자'가 다음 문단 첫 글자로 잡혔다 — 2026-11-22)
+    const invisible = (k) => !firstRect(rangeOfNode(idx.nodes[k]));
+    while (a < hi - 1 && invisible(a)) a++;
     let o;
-    const prevIdx = a - 1;
+    let prevIdx = a - 1;
+    while (prevIdx > lo && prevIdx > 0 && invisible(prevIdx)) prevIdx--;
     if (prevIdx >= lo && prevIdx >= 0) {
       const node = idx.nodes[prevIdx];
       const ch = firstCharOnPage(node, this.page, (r) => this.pageOfRect(r));

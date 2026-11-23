@@ -49,6 +49,46 @@ export async function closeReader() {
   if (current) await current.close();
 }
 
+// ── 책 본문 문단 ──
+// EPUB 책 CSS 는 문단마다 'line-height:1.7em; text-indent:1em; margin:0 1em'처럼 박아 두는 일이 많아, '책 원래 서식'을 켜면
+// 앱 읽기 설정(줄 간격·들여쓰기·문단 간격·좌우 여백·정렬)이 졌다(2026-11-22 사용자 지적: 『돈을 이기는 법』·코스톨라니, "앞으로 비슷한 책에도").
+// 그래서 전자책 보기에서 책 CSS 를 쓸 때, 그려진 문단 가운데 '보통 본문'인 것에 g-bodyp 를 달아 reader.css @layer gbody 가 앱 설정으로 덮는다.
+//  · 기준: 책에서 가장 많은 글이 든 문단 종류(태그+class, bodyParaSigs)의 계산된 모양(글자 크기·왼쪽 여백·위 간격)
+//  · 그와 같은 모양이면 class 가 달라도 본문(문단 종류가 여럿으로 쪼개진 책), 다르게 꾸민 문단 — 가운데·오른쪽 맞춤, 글자 크기가 다름(판권·각주·제목),
+//    더 들여 쓴 것(인용·시), 내어 쓰기(목록), 기울임·굵게 한 문단 전체, 테두리 상자, 위로 크게 띄운 것(장면 바뀜) — 은 책 서식 그대로
+//  · 본문 문단의 대부분을 감싼 바깥 상자의 좌우 여백도 앱 여백으로(g-bodywrap)
+const PARA_SKIP = 'table, li, figure, aside, nav, header, footer, pre';
+const PARA_BLOCKS = 'p, div, table, ul, ol, dl, blockquote, h1, h2, h3, h4, h5, h6, figure, section, article, pre';
+const paraSig = (el) => `${el.tagName}|${(el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ')}`;
+function paraCandidate(el) {
+  if (el.tagName === 'DIV' && el.querySelector(PARA_BLOCKS)) return false; // 글을 담은 맨 안쪽 div 만
+  if (el.closest(PARA_SKIP)) return false;
+  // 앱이 만든 문단은 뺀다. 문단마다 직접 붙인 style 은 따지지 않는다 — 변환기 책은 본문 문단마다 'line-height:1.6'을 붙여 두기도 한다(셀든 책).
+  // 가운데 맞춤·깊은 들여쓰기처럼 직접 꾸민 특별한 문단은 그려진 모양으로 가린다(markBodyParas)
+  return !/(^|\s)g-/.test(el.getAttribute('class') || '');
+}
+function bodyParaSigs(book) {
+  const tally = new Map();
+  let total = 0;
+  const tpl = document.createElement('template');
+  for (const sec of book.sections) {
+    tpl.innerHTML = sec.html;
+    for (const el of tpl.content.querySelectorAll('p, div')) {
+      if (!paraCandidate(el)) continue;
+      const n = el.textContent.replace(/\s+/g, '').length;
+      if (!n) continue;
+      const sig = paraSig(el);
+      tally.set(sig, (tally.get(sig) || 0) + n);
+      total += n;
+    }
+  }
+  tpl.innerHTML = '';
+  // class 없는 문단은 책의 기본 문단이다 — 늘 본문. 그 밖에는 글의 15% 넘게 든 종류
+  const out = new Set();
+  for (const [sig, n] of tally) if (sig === 'P|' || n >= total * 0.15) out.add(sig);
+  return out;
+}
+
 class Reader {
   constructor(doc, opts) {
     this.doc = doc;
@@ -280,6 +320,7 @@ class Reader {
     this.book = rec.book;
     this.texts = rec.texts;
     this.chapters = buildChapters(this.book, this.texts);
+    this.bodySigs = this.doc.format === 'epub' ? bodyParaSigs(this.book) : null;
     if (this.doc.format === 'pdf') {
       if (!this.figures) this.figures = new PdfFigures(this, this.book.figs, { fetchFile: fetchRemoteFile });
     } else if (this.doc.format === 'epub' || this.doc.format === 'docx') {
@@ -661,6 +702,7 @@ class Reader {
   }
 
   attachResources(root, onLoad) {
+    this.markBodyParas(root);
     for (const img of root.querySelectorAll('img[data-g-src]')) {
       if (this.figures && !this.isPdf) { this.figures.attach(img); continue; }
       const url = this.res.urls.get(img.getAttribute('data-g-src'));
@@ -672,6 +714,50 @@ class Reader {
       }
     }
     if (this.figures && !this.isPdf) this.figures.watchTables(root);
+  }
+
+  // 본문 문단에 g-bodyp(앱 읽기 설정으로 덮기) — 위 '책 본문 문단' 설명. 책 CSS 는 전자책 보기에서만 쓰므로 그때만
+  markBodyParas(root) {
+    if (!this.bodySigs?.size || this.view?.kind !== 'paged' || !this.settings.bookStyle) return;
+    const base = parseFloat(getComputedStyle(root).fontSize) || 16;
+    const items = [];
+    for (const el of root.querySelectorAll('p, div')) {
+      if (el.classList.contains('g-bodyp') || !paraCandidate(el)) continue;
+      const n = el.textContent.replace(/\s+/g, '').length;
+      if (!n) continue;
+      const cs = getComputedStyle(el);
+      items.push({
+        el, n, body: this.bodySigs.has(paraSig(el)), fs: parseFloat(cs.fontSize) || base, align: cs.textAlign,
+        left: (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.paddingLeft) || 0), top: parseFloat(cs.marginTop) || 0, indent: parseFloat(cs.textIndent) || 0,
+        italic: cs.fontStyle !== 'normal', bold: (parseInt(cs.fontWeight, 10) || 400) >= 600,
+        box: ['Top', 'Right', 'Bottom', 'Left'].some((s) => cs[`border${s}Style`] !== 'none' && (parseFloat(cs[`border${s}Width`]) || 0) > 0),
+      });
+    }
+    if (!items.length) return;
+    // 기준 모양: 이 구획의 본문 종류 문단(글자 수로 가중한 가운데값). 글이 적은 구획(판권·차례)이면 앞서 본 구획의 값, 그것도 없으면 앱 글자 크기 그대로
+    const wmed = (arr, key) => {
+      const s = [...arr].sort((a, b) => a[key] - b[key]);
+      const half = s.reduce((t, x) => t + x.n, 0) / 2;
+      let acc = 0;
+      for (const x of s) { acc += x.n; if (acc >= half) return x[key]; }
+      return s[s.length - 1][key];
+    };
+    const ref = items.filter((x) => x.body);
+    if (ref.reduce((t, x) => t + x.n, 0) >= 1500) this.bodyRef = { fs: wmed(ref, 'fs') / base, left: wmed(ref, 'left') / base, top: wmed(ref, 'top') / base };
+    const R = this.bodyRef || { fs: 1, left: 0, top: 0 };
+    const plain = (x) => !/center|right|end/.test(x.align) && Math.abs(x.fs / base / R.fs - 1) <= 0.08
+      && x.left - R.left * base <= x.fs && x.indent > -0.1 * x.fs && x.top <= Math.max(1.2 * x.fs, R.top * base + 0.8 * x.fs)
+      && !x.italic && !x.bold && !x.box;
+    const marked = items.filter(plain);
+    for (const x of marked) x.el.classList.add('g-bodyp');
+    // 본문 문단 대부분(글자 60% 넘게)을 감싼 바깥 상자 — 그 좌우 여백·폭은 앱 여백을 따른다
+    const total = marked.reduce((t, x) => t + x.n, 0);
+    if (total < 300) return;
+    const wrapChars = new Map();
+    for (const x of marked) {
+      for (let a = x.el.parentElement; a && a !== root; a = a.parentElement) wrapChars.set(a, (wrapChars.get(a) || 0) + x.n);
+    }
+    for (const [a, n] of wrapChars) if (n >= total * 0.6 && !a.matches(PARA_SKIP)) a.classList.add('g-bodywrap');
   }
 
   // PDF 그림·표: 가운데를 누르면 크게(전자책 보기의 좌우 끝은 쪽 넘기기 그대로)
@@ -1010,13 +1096,16 @@ class Reader {
     if (view?.kind !== 'paged' || !view.pageOfOffset) return null;
     const text = textOf(info.root);
     const blank = (a, b) => a <= b && !text.slice(a, b).trim();
+    // 쪽은 보이는 글자로 잰다 — 쪽 경계가 문단 사이에 걸리면 앞 하이라이트 끝의 줄바꿈 글자는 화면에 없어 다음 쪽으로 세어졌다
+    const lastInk = (s, e) => { let i = e - 1; while (i > s && !text[i].trim()) i--; return i; };
+    const firstInk = (s, e) => { let i = s; while (i < e - 1 && !text[i].trim()) i++; return i; };
     for (const ann of this.annsOfDoc('hl')) {
       if ((ann.color || 0) !== color) continue;
       const r = this.resolve(ann);
       if (!r || r.u !== info.u) continue;
       // 앞 쪽 끝에 칠해 둔 것 → 이번 것, 또는 이번 것 → 뒤 쪽 처음에 칠해 둔 것
-      if (blank(r.end, info.start) && view.pageOfOffset(r.end - 1) !== view.pageOfOffset(info.start)) return { ann, r };
-      if (blank(info.end, r.start) && view.pageOfOffset(info.end - 1) !== view.pageOfOffset(r.start)) return { ann, r };
+      if (blank(r.end, info.start) && view.pageOfOffset(lastInk(r.start, r.end)) !== view.pageOfOffset(firstInk(info.start, info.end))) return { ann, r };
+      if (blank(info.end, r.start) && view.pageOfOffset(lastInk(info.start, info.end)) !== view.pageOfOffset(firstInk(r.start, r.end))) return { ann, r };
     }
     return null;
   }

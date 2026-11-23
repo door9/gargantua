@@ -130,6 +130,17 @@
   .g-book { font-family: var(--rfont) !important; }
   .g-text :not(pre, code, kbd, samp, tt, [data-gui], [data-gui] *) { font-family: inherit !important; }
 }
+/* 책 본문 문단은 늘 앱 읽기 설정(글자 크기·줄 간격·들여쓰기·문단 간격·좌우 여백·정렬·줄바꿈)을 따른다(2026-11-22).
+   책 CSS 가 문단마다 박아 둔 값('책 원래 서식'을 켰을 때)을 이긴다. g-bodyp 는 '보통 본문' 모양의 문단에만 붙는다(reader/index.js markBodyParas) —
+   가운데 맞춘 문단·인용·작은 글씨처럼 책이 따로 꾸민 문단은 책 서식 그대로. 묶음(@layer) 안의 !important 라 책의 !important 도 이긴다.
+   g-bodywrap: 본문 문단 대부분을 감싼 바깥 상자(좌우 여백만 앱 여백으로) */
+@layer gbody {
+  .g-text .g-bodyp { font-size: var(--fs) !important; line-height: var(--lh) !important; text-indent: var(--indent) !important; margin: 0 0 var(--pgap) !important; padding-left: 0 !important; padding-right: 0 !important; text-align: justify !important; word-break: normal !important; hyphens: manual !important; -webkit-hyphens: manual !important; }
+  .rd[data-align="left"] .g-text .g-bodyp { text-align: start !important; }
+  .rd[data-keep="1"] .g-text .g-bodyp { word-break: keep-all !important; }
+  .rd[data-hyph="1"] .g-text .g-bodyp { hyphens: auto !important; -webkit-hyphens: auto !important; }
+  .g-text .g-bodywrap { margin-left: 0 !important; margin-right: 0 !important; padding-left: 0 !important; padding-right: 0 !important; width: auto !important; max-width: none !important; text-indent: 0 !important; }
+}
 .g-text hr { border: 0; border-top: 1px solid var(--r-line); margin: 1.6em 0; }
 .g-text :is(sup, sub) { font-size: .7em; line-height: 0; }
 .g-text sup a, .g-noteref { text-decoration: none; font-weight: 700; padding: 0 .12em; }
