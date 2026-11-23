@@ -316,7 +316,9 @@ export function stopSpeech(r) {
   r.tts.stopped = true;
   speechSynthesis.cancel();
   r.painter.remove('tts');
+  r.tts.cleanup?.();
   r.tts.bar?.remove();
+  r.tts.chip?.remove();
   r.tts = null;
 }
 
@@ -345,7 +347,30 @@ function startSpeech(r) {
     h('button', { class: 'gicon small', 'aria-label': '느리게', html: '−', onclick: () => setRate(r.tts.rate - 0.1) }),
     rateOut,
     h('button', { class: 'gicon small', 'aria-label': '빠르게', html: '+', onclick: () => setRate(r.tts.rate + 0.1) }),
-    h('button', { class: 'gicon', 'aria-label': '멈춤', html: ico('stop'), onclick: () => stopSpeech(r) }));
+    h('button', { class: 'gicon', 'aria-label': '멈춤', html: ico('stop'), onclick: () => stopSpeech(r) }),
+    h('button', { class: 'gicon', 'aria-label': '접기', html: ico('down'), onclick: () => collapse() }));
+  // 읽는 동안에는 막대를 접어 작은 표시만 남긴다(본문을 가리지 않게 — 2026-11-23 사용자 요청). 표시를 누르면 펼치고,
+  // 읽는 중 5초 동안 손대지 않거나 막대 밖을 누르면 다시 접는다. 일시정지 중에는 저절로 접지 않는다(이어 읽기 단추가 보이게)
+  const chip = h('button', { class: 'tts-chip', type: 'button', 'aria-label': '읽어주기 조절 펼치기', onclick: () => expand() },
+    h('span', { html: ico('speaker') }), h('span', { class: 'tts-wave', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')));
+  let timer = 0;
+  const arm = () => {
+    clearTimeout(timer);
+    if (r.tts && !r.tts.paused && !bar.hidden) timer = setTimeout(collapse, 5000);
+  };
+  function collapse() {
+    clearTimeout(timer);
+    bar.hidden = true;
+    chip.hidden = false;
+  }
+  function expand() {
+    bar.hidden = false;
+    chip.hidden = true;
+    arm();
+  }
+  const onDown = (e) => { if (!bar.hidden && !bar.contains(e.target) && !chip.contains(e.target)) collapse(); };
+  document.addEventListener('pointerdown', onDown, true);
+  bar.addEventListener('pointerdown', arm);
   playBtn.addEventListener('click', () => {
     if (!r.tts) return;
     if (r.tts.paused) {
@@ -357,9 +382,14 @@ function startSpeech(r) {
       playBtn.innerHTML = ico('play');
       speechSynthesis.cancel();
     }
+    chip.classList.toggle('paused', r.tts.paused);
+    arm();
   });
   r.tts.bar = bar;
-  r.root.append(bar);
+  r.tts.chip = chip;
+  r.tts.cleanup = () => { clearTimeout(timer); document.removeEventListener('pointerdown', onDown, true); };
+  collapse();
+  r.root.append(bar, chip);
   speakNext(r);
 }
 

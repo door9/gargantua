@@ -271,9 +271,26 @@
 .fnpop-foot { display: flex; justify-content: flex-end; padding: 0 8px 8px; }
 
 /* 읽어주기 */
-.tts-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(52px + var(--safe-b)); z-index: 7; display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px; border-radius: 24px; background: #1C2420; color: #EFEBE0; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); font-size: 13px; }
+.tts-bar { position: absolute; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 20px); bottom: calc(52px + var(--safe-b)); z-index: 7; display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px; border-radius: 24px; background: #1C2420; color: #EFEBE0; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); font-size: 13px; }
 .tts-bar .gicon { color: inherit; }
-.tts-label { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
+.tts-label { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; white-space: nowrap; }
+.tts-bar[hidden], .tts-chip[hidden] { display: none; }
+/* 읽는 동안의 작은 표시 — 본문을 가리지 않는 띠 안에: 넓은 화면은 아래 띠(늘 비워 둔 칸)의 쪽 번호 오른쪽, 휴대폰은 위쪽 접힌 띠 왼쪽(쪽 번호 반대편).
+   휴대폰에서 위쪽 메뉴를 펼쳤을 때만 오른쪽 아래(아래 띠 위)에 잠시 뜬다 */
+.tts-chip { position: absolute; left: calc(50% + 64px); bottom: calc(2px + var(--safe-b)); z-index: 7; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--r-line); background: var(--r-bar); color: var(--r-accent); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+.tts-chip .ico { width: 16px; height: 16px; }
+.tts-wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.tts-wave i { width: 2.5px; height: 40%; border-radius: 1px; background: currentColor; animation: tts-wave 1s ease-in-out infinite; }
+.tts-wave i:nth-child(2) { animation-delay: .2s; }
+.tts-wave i:nth-child(3) { animation-delay: .4s; }
+@keyframes tts-wave { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+.tts-chip.paused { color: var(--r-muted); }
+.tts-chip.paused .tts-wave i { animation: none; height: 45%; }
+@media (prefers-reduced-motion: reduce) { .tts-wave i { animation: none; height: 60%; } }
+@media (max-width: 899.98px) {
+  .tts-chip { left: auto; right: 14px; bottom: calc(38px + var(--safe-b)); }
+  .rd.collapsed .tts-chip { top: calc(var(--safe-t) + 1px); bottom: auto; left: 8px; right: auto; height: 22px; padding: 0 8px; border: 0; background: transparent; box-shadow: none; }
+}
 .tts-label .ico { width: 17px; height: 17px; }
 .tts-rate { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
 
