@@ -7,7 +7,8 @@ import { navigate, openDoc, runImport } from '../main.js';
 import { ACCEPT, FORMATS } from '../parse/index.js';
 import { coverUrlCache } from '../docs.js';
 import { syncStatus, onSyncStatus } from '../sync/sync.js';
-import { pickReplacement } from '../replace.js';
+import { pickReplacement, bakeFixes } from '../replace.js';
+import { fixesOf } from '../fixes.js';
 import { todayStats } from './stats.js';
 
 const covers = coverUrlCache();
@@ -538,6 +539,7 @@ function docMenu(anchor, d) {
       downloadBlob(blob, d.fileName || `${d.title}.${d.format}`);
     } },
     { label: '원본 파일 바꾸기', icon: 'replace', onClick: () => pickReplacement(d) },
+    d.format === 'epub' && fixesOf(d.id).length ? { label: `띄어쓰기 고침을 원본에 반영 (${fixesOf(d.id).length})`, icon: 'spacing', onClick: () => bakeFixes(d) } : null,
     { divider: true },
     { label: '서재에서 삭제', icon: 'trash', danger: true, onClick: async () => {
       const n = liveAnns(d.id).filter((a) => a.kind !== 'fix').length;

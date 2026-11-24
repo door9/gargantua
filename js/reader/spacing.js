@@ -1,7 +1,7 @@
 // 띄어쓰기 고치기 창 — 고른 글의 글자 사이를 눌러 띄우거나 붙인다(기록·입히기는 fixes.js, 적용은 reader/index.js applyFixChange).
 // 띄어 쓰는 경우가 많은 자리(PDF 줄 잇기에 쓰는 음절 통계 pdfx/joiner.js spaceProb)는 점선으로 알려만 준다(저절로 고치지 않음).
 import { h, esc, toast } from '../util.js';
-import { sheet, infoButton } from '../ui/overlay.js';
+import { sheet, infoButton, whenHistorySettled } from '../ui/overlay.js';
 import { curToOrig, origToCur, fixesOf, fixSig } from '../fixes.js';
 import { removeAnn } from '../store.js';
 import { toGlobal } from './chapters.js';
@@ -190,5 +190,22 @@ export function openFixList(r) {
     }
   };
   fill();
-  box = sheet({ title: '띄어쓰기 고친 곳', className: 'sp-list-sheet', tall: true, body });
+  // EPUB 은 쌓인 고침을 한 번에 원본 파일에 넣을 수 있다(원본 전체를 다시 올리므로 사용자가 누를 때만)
+  const epub = r.doc.format === 'epub';
+  box = sheet({
+    title: '띄어쓰기 고친 곳',
+    className: 'sp-list-sheet',
+    tall: true,
+    body,
+    headerExtra: infoButton(`고친 내용은 이 문서를 펼칠 때 본문에 입혀지고 원본 파일은 그대로입니다.${epub ? '<br>\'원본 EPUB에 반영\'을 누르면 쌓인 고침을 한 번에 원본 파일에 넣어 새 원본으로 저장합니다. 원본 파일 전체를 Dropbox에 다시 올리므로, 고침이 어느 정도 쌓였을 때 하는 것이 좋습니다.' : ''}`),
+    actions: epub ? [{
+      label: '원본 EPUB에 반영',
+      onClick: async (close) => {
+        close();
+        await whenHistorySettled();
+        r.bakeFixes();
+        return true;
+      },
+    }] : [],
+  });
 }

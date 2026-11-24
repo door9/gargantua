@@ -4,14 +4,15 @@
 //  · 책갈피·읽던 자리: 그 자리의 옛 글귀로 찾고, 못 찾으면 같은 진도(%)로
 //  · 띄어쓰기 고침: 새 원본에서 같은 글귀(앞뒤 16자)를 찾아 옮기고, 없으면(새 원본이 이미 바로잡혀 있는 등) 지운다
 // 새 원본은 기기에서 고르거나, 서재에 이미 넣어 둔 다른 문서의 파일을 쓴다(그 문서는 바꾼 뒤 지울지 묻는다)
-import { h, esc, toast, sha256Hex, emit, pickFiles, fmtDate } from './util.js';
+import { h, esc, toast, sha256Hex, emit, pickFiles, fmtDate, fmtBytes, downloadBlob } from './util.js';
 import { ico } from './icons.js';
 import {
   state, saveDoc, saveAnn, removeAnn, savePos, putFile, getFile, liveAnns, liveDocs, deleteFileIfUnused, removeDoc,
 } from './store.js';
 import { db, dropDocCache } from './db.js';
 import { parseDocument, sniffFormat, PARSER_VERSION, PDF_BOOK_VERSION, ACCEPT } from './parse/index.js';
-import { loadBook, bookSummary, MAX_FILE } from './docs.js';
+import { loadBook, bookSummary, MAX_FILE, requireFile } from './docs.js';
+import { bakeEpub } from './epubfix.js';
 import { pdfInfo } from './pdfdoc.js';
 import { fixesOf, planFixes, patchBook, fixAnchor } from './fixes.js';
 import { fromGlobal, toGlobal } from './reader/chapters.js';
@@ -50,6 +51,48 @@ export async function pickReplacement(doc, { before, onStatus, after } = {}) {
   await after?.(res);
   await reportResult(res);
   return res;
+}
+
+// ── 띄어쓰기 고침을 원본 EPUB 에 반영(수동 — 원본 전체를 다시 올리므로 사용자가 고를 때만) ──
+// 고침을 넣은 EPUB 을 만들어 그것으로 원본을 바꾼다(replaceDocFile — 하이라이트·읽던 자리는 옮기고, 원본에 들어간 고침 기록은 지운다)
+export async function bakeFixes(doc, { before, onStatus, after } = {}) {
+  if (doc.format !== 'epub') return null;
+  const count = fixesOf(doc.id).length;
+  if (!count) { toast('반영할 띄어쓰기 고침이 없습니다.'); return null; }
+  const ok = await confirmDialog({
+    title: '고친 내용을 원본에 반영할까요?',
+    message: `<p>띄어쓰기 고침 ${count}개를 원본 EPUB 파일에 넣어 새 원본으로 저장합니다.</p>`
+      + `<p>원본 파일 전체${doc.fileSize ? `(${esc(fmtBytes(doc.fileSize))})` : ''}를 Dropbox에 다시 올리고, 다른 기기는 이 문서를 열 때 새 원본을 받습니다. 하이라이트·메모·읽던 자리는 그대로 옮깁니다.</p>`,
+    ok: '반영',
+  });
+  if (!ok) return null;
+  await before?.();
+  const chip = onStatus ? null : statusChip();
+  const status = onStatus || chip.set;
+  let res = null;
+  let baked = null;
+  try {
+    status('원본 읽는 중');
+    const blob = await requireFile(doc, { onStatus: status, fetchFile: fetchRemoteFile });
+    const rec = await loadBook(doc, { onStatus: status, fetchFile: fetchRemoteFile });
+    const { plan } = planFixes(rec.texts, fixesOf(doc.id));
+    baked = await bakeEpub(blob, rec.book, rec.texts, plan, { onStatus: status });
+    if (!baked.blob) throw new ReplaceError('원본 파일에서 고칠 자리를 찾지 못했습니다. 고침은 앱 안에 그대로 둡니다.');
+    res = await replaceDocFile(doc, baked.blob, doc.fileName || `${doc.title}.epub`, { onStatus: status });
+  } catch (e) {
+    console.warn('원본에 반영 실패', e);
+    toast(e instanceof ReplaceError ? e.message : `원본에 반영하지 못했습니다: ${e?.message || e}`, { duration: 6000 });
+    return { replaced: false, error: e };
+  } finally {
+    chip?.remove();
+  }
+  await after?.(res);
+  const left = fixesOf(doc.id).length;
+  const msg = `띄어쓰기 고침 ${baked.applied}개를 원본에 반영했습니다.${left ? ` ${left}개는 원본에서 자리를 찾지 못해 앱 안 고침으로 남겼습니다.` : ''}`;
+  if (res?.lost?.length) await reportResult(res);
+  // 고친 EPUB 을 기기에도 받아 둘 수 있게(다른 읽기 앱·원래 보관 폴더용) — 기기 안에서 만드는 것이라 데이터는 들지 않는다
+  toast(msg, { action: '파일로 저장', duration: 8000, onAction: () => downloadBlob(baked.blob, doc.fileName || `${doc.title}.epub`) });
+  return { ...res, baked: { applied: baked.applied, left } };
 }
 
 // 새 원본 고르기: 기기의 파일, 또는 서재에 넣어 둔 다른 문서

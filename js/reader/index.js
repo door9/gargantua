@@ -23,7 +23,7 @@ import { fetchRemoteFile, isStale, whenFresh, pullOcr, pushOcrIfBehind } from '.
 import { startOcr } from './ocrsheet.js';
 import { fixesOf, fixSig, fixAnchor, planFixes, patchBook, origToCur, curToOrig } from '../fixes.js';
 import { openSpacing, openFixList } from './spacing.js';
-import { pickReplacement } from '../replace.js';
+import { pickReplacement, bakeFixes } from '../replace.js';
 
 export const COLORS = [
   { name: '노랑', key: 'yellow' },
@@ -1846,15 +1846,18 @@ class Reader {
     menu(anchor, items);
   }
 
-  // 원본 파일 바꾸기(replace.js) — 읽던 자리를 먼저 써 두고, 바꾸는 동안은 옛 원본 기준 자리를 쓰지 않는다. 바꾼 뒤 새 원본으로 다시 연다
-  async replaceFile() {
+  // 원본 파일 바꾸기·띄어쓰기 고침을 원본에 반영(replace.js) — 읽던 자리를 먼저 써 두고, 바꾸는 동안은 옛 원본 기준 자리를 쓰지 않는다.
+  // 바꾼 뒤 새 원본으로 다시 연다
+  replaceFile() { return this.swapOriginal(pickReplacement, '원본 바꾸는 중'); }
+  bakeFixes() { return this.swapOriginal(bakeFixes, '원본에 반영하는 중'); }
+  async swapOriginal(run, label) {
     const id = this.doc.id;
-    await pickReplacement(this.doc, {
+    await run(this.doc, {
       before: async () => {
         this.flush();
         await flushPositions();
         this.frozen = true;
-        this.setLoading('원본 바꾸는 중');
+        this.setLoading(label);
       },
       onStatus: (m) => this.setLoading(m),
       after: async (res) => { if (res?.replaced && this.alive) await openReader(id); },
