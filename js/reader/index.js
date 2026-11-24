@@ -1305,13 +1305,13 @@ class Reader {
         const text = textOf(info.root).slice(info.start, info.end);
         lookupMenu(e.currentTarget, text);
       }));
-    // 띄어쓰기 고치기(줄글·전자책 보기 — 원본 PDF 쪽은 글이 PDF 그대로라 뺀다)
+    // 자주 쓰지 않는 것은 맨 오른쪽 ⋮ 안에(2026-11-24 사용자 "띄어쓰기 고치기는 웬만하면 잘 사용하지 않을 것 같아").
+    // 띄어쓰기 고치기는 줄글·전자책 보기만 — 원본 PDF 쪽은 글이 PDF 그대로라 넣을 것이 없어 ⋮ 도 없다
+    const more = [];
     if (!this.isPdf) {
-      tool.append(selBtn('spacing', '띄어쓰기', () => {
-        const at = { u: info.u, start: info.start, end: info.end };
-        this.clearSelection();
-        openSpacing(this, at);
-      }));
+      // 메뉴를 누르는 사이 선택이 풀려도 고른 글은 그대로 쓴다
+      const at = { u: info.u, start: info.start, end: info.end };
+      more.push({ label: '띄어쓰기 고치기', icon: 'spacing', onClick: () => { this.clearSelection(); openSpacing(this, at); } });
     }
     if (overlaps.length) {
       tool.append(selBtn('trash', '지우기', async () => {
@@ -1322,6 +1322,7 @@ class Reader {
         toast('하이라이트를 지웠습니다.', { action: '되돌리기', onAction: async () => { for (const s of snaps) await restoreAnn(s); this.refreshAnns(); } });
       }));
     }
+    if (more.length) tool.append(selBtn('more', '더 보기', (e) => menu(e.currentTarget, more, { align: 'right' })));
     tool.hidden = false;
     this.placeSelTool(info.range);
   }

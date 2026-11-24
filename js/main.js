@@ -12,7 +12,7 @@ import { runGate, closeGate, resumeGate } from './ui/bootgate.js';
 import { dueCount } from './views/review.js';
 
 export const APP_VERSION = '1.0.0';
-export const BUILD = 'b89caeae53';
+export const BUILD = '79901a9d0f';
 
 const VIEWS = {
   library: { label: '서재', icon: 'library', load: () => import('./views/library.js') },
