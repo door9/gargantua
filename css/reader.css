@@ -1,9 +1,10 @@
 /* 읽기 화면 — 안드로이드 앱의 종이·세피아·야간 색을 그대로.
-   --r-bar(위아래 메뉴 바탕)는 비치지 않게 — 메뉴가 본문 위에 겹쳐 뜨므로 뒤 글자가 흐릿하게 보였다 */
+   --r-glass(위아래 메뉴 막대 바탕)는 조금 비치게 — 메뉴는 본문 위에 겹쳐 뜨므로, 펼쳤을 때 그 밑에 글이 가려져 있다는 것을
+   알 수 있게 한다(2026-11-24 사용자 요청. 10-30엔 안 비치게 했었다). --r-bar는 안 비치는 같은 색(읽어주기 단추 등) */
 .app-reader { position: fixed; inset: 0; z-index: 50; }
 .rd {
   --r-bg: #FAF9F5; --r-fg: #20231F; --r-muted: #666B64; --r-link: #28634B; --r-accent: #4A745F;
-  --r-bar: #FAF9F5; --r-line: rgba(32, 35, 31, .1); --r-chip: rgba(32, 35, 31, .05);
+  --r-bar: #FAF9F5; --r-glass: rgba(250, 249, 245, .85); --r-line: rgba(32, 35, 31, .1); --r-chip: rgba(32, 35, 31, .05);
   --r-find: rgba(255, 224, 130, .55); --r-find-cur: rgba(255, 190, 70, .9);
   --rh0: rgba(255, 224, 120, .85); --rh1: rgba(170, 230, 196, .9); --rh2: rgba(245, 190, 205, .9); --rh3: rgba(180, 214, 244, .92);
   --r-sel: rgba(74, 116, 95, .26); --r-selh: #4A745F;
@@ -12,14 +13,14 @@
 }
 .rd.pal-sepia {
   --r-bg: #F2E6CB; --r-fg: #352C20; --r-muted: #736451; --r-link: #775534; --r-accent: #9B7045;
-  --r-bar: #F2E6CB; --r-line: rgba(53, 44, 32, .12); --r-chip: rgba(53, 44, 32, .06);
+  --r-bar: #F2E6CB; --r-glass: rgba(242, 230, 203, .85); --r-line: rgba(53, 44, 32, .12); --r-chip: rgba(53, 44, 32, .06);
   --r-find: rgba(135, 194, 138, .45); --r-find-cur: rgba(105, 168, 110, .85);
   --rh0: rgba(250, 210, 100, .7); --rh1: rgba(150, 205, 160, .7); --rh2: rgba(230, 160, 170, .62); --rh3: rgba(150, 190, 225, .7);
   --r-sel: rgba(155, 112, 69, .28); --r-selh: #9B7045;
 }
 .rd.pal-night {
   --r-bg: #131815; --r-fg: #D8DED9; --r-muted: #969F98; --r-link: #8FC5A9; --r-accent: #6C9B81;
-  --r-bar: #131815; --r-line: rgba(255, 255, 255, .09); --r-chip: rgba(255, 255, 255, .06);
+  --r-bar: #131815; --r-glass: rgba(19, 24, 21, .85); --r-line: rgba(255, 255, 255, .09); --r-chip: rgba(255, 255, 255, .06);
   --r-find: rgba(79, 118, 93, .55); --r-find-cur: rgba(92, 141, 107, .9);
   --rh0: rgba(150, 125, 40, .62); --rh1: rgba(64, 120, 90, .65); --rh2: rgba(130, 62, 80, .65); --rh3: rgba(60, 95, 128, .7);
   --r-sel: rgba(108, 155, 129, .4); --r-selh: #6C9B81;
@@ -36,7 +37,7 @@
   .rd { --rd-top-space: calc(var(--safe-t) + 57px); --rd-bottom-space: calc(30px + var(--safe-b)); --pg-safe-b: 0px; }
   .rd.chap-on { --rd-top-space: calc(var(--safe-t) + 105px); }
 }
-.rd-top { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; min-height: var(--rd-top-space); background: var(--r-bar); padding-top: var(--safe-t); }
+.rd-top { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; min-height: var(--rd-top-space); background: var(--r-glass); padding-top: var(--safe-t); }
 .rd-mini { display: none; width: 100%; height: 24px; place-items: center; color: var(--r-muted); }
 .rd-mini .ico { width: 20px; height: 20px; }
 .rd.collapsed .rd-mini { display: grid; }
@@ -74,7 +75,7 @@
 .side-tab { flex: 1; height: 34px; border-radius: 9px; font-size: 13.5px; color: var(--r-muted); }
 .side-tab.on { background: var(--r-chip); color: var(--r-fg); }
 .side-body { flex: 1; overflow: auto; padding: 4px 12px 20px; }
-.rd-foot { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: calc(30px + var(--safe-b)); display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 0 16px var(--safe-b); font-size: 12px; color: var(--r-muted); border-top: 1px solid var(--r-line); background: var(--r-bar); }
+.rd-foot { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: calc(30px + var(--safe-b)); display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 0 16px var(--safe-b); font-size: 12px; color: var(--r-muted); border-top: 1px solid var(--r-line); background: var(--r-glass); }
 .rd.collapsed .rd-foot { display: none; }
 .rd-foot-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rd-foot-r { white-space: nowrap; font-variant-numeric: tabular-nums; }

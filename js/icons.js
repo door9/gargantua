@@ -13,6 +13,7 @@ const PATHS = {
   folderMinus: '<path d="M3.5 6.5v11.5a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1V8.5a1 1 0 0 0-1-1h-8.2L9.8 5.5H4.5a1 1 0 0 0-1 1Z"/><path d="M9.5 13h5"/>',
   scanText: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 9.5h8M8 12.5h8M8 15.5h5"/>',
   more: '<circle cx="12" cy="5.5" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="12" cy="18.5" r="1.1"/>',
+  continue: '<path d="M4 6.5h12M4 10.5h12M4 14.5h6.5"/><path d="M13 18h7.5"/><path d="m17.8 15.3 2.7 2.7-2.7 2.7"/>',
   toc: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
   bookmark: '<path d="M6.5 3.5h11a.5.5 0 0 1 .5.5v16.5l-6-4-6 4V4a.5.5 0 0 1 .5-.5Z"/>',
   bookmarks: '<path d="M8.5 6.5h9a.5.5 0 0 1 .5.5v14l-5-3.4-5 3.4V7a.5.5 0 0 1 .5-.5Z"/><path d="M6 17.5V4a1 1 0 0 1 1-1h9"/>',

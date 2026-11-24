@@ -7,7 +7,7 @@ import {
 } from '../store.js';
 import { loadBook, loadResources, requireFile, loadPdfTexts, cachedBook } from '../docs.js';
 import { openPdf, pdfOutline, closePdf } from '../pdfdoc.js';
-import { textOf, offsetsFromRange, describe, resolveAnchor, offsetOfBoundary, textIndex } from '../text.js';
+import { textOf, offsetsFromRange, describe, resolveAnchor, offsetOfBoundary, textIndex, rangeFromOffsets, sentenceBounds } from '../text.js';
 import { rootFrom } from '../parse/common.js';
 import { FlowView } from './flow.js';
 import { PagedView } from './paged.js';
@@ -1294,7 +1294,12 @@ class Reader {
       onpointerdown: (e) => e.preventDefault(),
       onclick: () => { this.highlightSelection(i, { announce: true }); },
     })));
-    tool.append(dots,
+    // 고른 글이 이 쪽 끝까지 닿았으면 '다음 쪽까지 이어 칠하기'(전자책 보기, 2026-11-24 사용자 요청) — 본문 가운데를 골랐으면 보이지 않는다
+    const cont = this.continueTarget(info);
+    const contBtn = cont && selBtn('continue', '다음 쪽까지 이어 칠하기', () => this.continueSelection(info));
+    tool.append(dots);
+    if (contBtn) tool.append(contBtn);
+    tool.append(
       selBtn('note', '메모', () => this.noteForSelection()),
       selBtn('copy', '복사', async () => {
         const text = textOf(info.root).slice(info.start, info.end);
@@ -1308,6 +1313,7 @@ class Reader {
     // 자주 쓰지 않는 것은 맨 오른쪽 ⋮ 안에(2026-11-24 사용자 "띄어쓰기 고치기는 웬만하면 잘 사용하지 않을 것 같아").
     // 띄어쓰기 고치기는 줄글·전자책 보기만 — 원본 PDF 쪽은 글이 PDF 그대로라 넣을 것이 없어 ⋮ 도 없다
     const more = [];
+    if (cont) more.push({ label: '다음 쪽까지 이어 칠하기', icon: 'continue', onClick: () => this.continueSelection(info) });
     if (!this.isPdf) {
       // 메뉴를 누르는 사이 선택이 풀려도 고른 글은 그대로 쓴다
       const at = { u: info.u, start: info.start, end: info.end };
@@ -1324,12 +1330,17 @@ class Reader {
     }
     if (more.length) tool.append(selBtn('more', '더 보기', (e) => menu(e.currentTarget, more, { align: 'right' })));
     tool.hidden = false;
+    // 좁은 화면에서 단추가 한 줄에 다 안 들어가면(칠한 곳 위를 골라 '지우기'까지 붙을 때) 이어 칠하기는 ⋮ 안에만 둔다
+    if (contBtn && tool.scrollWidth > tool.clientWidth + 1) contBtn.remove();
     this.placeSelTool(info.range);
   }
 
   placeSelTool(range) {
     const tool = this.selTool;
-    const rects = [...range.getClientRects()].filter((r) => r.width || r.height);
+    // 여러 쪽에 걸친 선택(이어 칠하기)은 지금 보이는 쪽의 글줄로 자리를 잡는다
+    const all = [...range.getClientRects()].filter((r) => r.width || r.height);
+    const seen = all.filter((r) => r.right > 0 && r.left < innerWidth);
+    const rects = seen.length ? seen : all;
     const first = rects[0] || range.getBoundingClientRect();
     const last = rects[rects.length - 1] || first;
     const tw = tool.offsetWidth;
@@ -1353,6 +1364,54 @@ class Reader {
 
   hideSelTool() {
     this.selTool.hidden = true;
+  }
+
+  // 고른 글이 이 쪽 끝까지 닿았나(전자책 보기): 마지막 글자는 이 쪽에, 바로 뒤 글자는 다음 쪽에 있어야 한다.
+  // 닿았으면 다음 쪽으로 넘겨 늘릴 끝 위치 — 끊긴 문장이 끝나는 곳(그 쪽을 넘지 않게). 장(구획)의 끝이면 잇지 않는다(하이라이트는 구획 안에서만)
+  continueTarget(info) {
+    const view = this.view;
+    if (!info || this.isPdf || view?.kind !== 'paged' || info.u !== view.s || !view.pageOfOffset) return null;
+    const text = textOf(info.root);
+    let last = info.end - 1;
+    while (last > info.start && !text[last].trim()) last--;
+    let next = info.end;
+    while (next < text.length && !text[next].trim()) next++;
+    if (next >= text.length) return null;
+    const w = view.wins?.[view.wi];
+    if (w && next >= w.to) return null;
+    const page = view.pageOfOffset(next);
+    if (view.pageOfOffset(last) !== view.page || page <= view.page) return null;
+    let end = Math.max(next + 1, sentenceBounds(text, next).end);
+    while (end > next + 1 && !text[end - 1].trim()) end--;
+    if (view.pageOfOffset(end - 1) > page) {
+      // 문장이 다음 쪽도 넘으면 그 쪽의 마지막 글자까지(쪽 번호는 글 순서대로 커진다 — 둘로 나눠 찾는다)
+      let lo = next, hi = end - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (view.pageOfOffset(mid) <= page) lo = mid; else hi = mid - 1;
+      }
+      end = lo + 1;
+    }
+    return { page, end };
+  }
+
+  // 다음 쪽으로 넘기며 고른 범위를 늘린다 — 끝 손잡이로 고친 뒤 색을 누르면 두 쪽에 걸친 하이라이트 하나로 칠해진다
+  continueSelection(info) {
+    const t = this.continueTarget(info);
+    if (!t) return;
+    const { root, u, start } = info;
+    this.hideSelTool();
+    this.view.setPage(t.page, { instant: true });
+    if (this.tsel?.on) {
+      this.tsel.sel = { root, u, a: start, b: t.end };
+      this.tsel.paint();
+      this.onTouchSelect(this.tsel.info, true);
+    } else {
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(rangeFromOffsets(root, start, t.end));
+      this.onSelectionChange();
+    }
   }
 
   // ── 누르기: 링크·메모 표시·하이라이트·쪽 넘기기 ──
