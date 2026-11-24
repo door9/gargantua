@@ -31,6 +31,8 @@ export const COLORS = [
   { name: '분홍', key: 'rose' },
   { name: '파랑', key: 'blue' },
 ];
+// 쪽 끝 이어 칠하기: 고른 끝 뒤로 이 쪽에 이만큼(빈칸 빼고 글자 수)까지 남아도 쪽 끝까지 고른 것으로 본다
+const CONT_SLACK = 5;
 
 let current = null;
 export const currentReader = () => current;
@@ -1366,21 +1368,28 @@ class Reader {
     this.selTool.hidden = true;
   }
 
-  // 고른 글이 이 쪽 끝까지 닿았나(전자책 보기): 마지막 글자는 이 쪽에, 바로 뒤 글자는 다음 쪽에 있어야 한다.
-  // 닿았으면 다음 쪽으로 넘겨 늘릴 끝 위치 — 끊긴 문장이 끝나는 곳(그 쪽을 넘지 않게). 장(구획)의 끝이면 잇지 않는다(하이라이트는 구획 안에서만)
+  // 고른 글이 이 쪽 끝까지 닿았나(전자책 보기): 마지막 글자는 이 쪽에 있고, 그 뒤로 이 쪽에 남은 글자가 CONT_SLACK(5)자 이내여야 한다
+  // (쪽 맨 끝 글자까지 정확히 고르기는 어렵다 — 2026-11-24 사용자 "본문 끝에서 5자 이내". 빈칸은 세지 않는다).
+  // 닿았으면 다음 쪽으로 넘겨 늘릴 끝 위치 — 다음 쪽 첫 문장이 끝나는 곳(그 쪽을 넘지 않게). 남겨 둔 글자도 함께 칠해진다.
+  // 장(구획)의 끝이면 잇지 않는다(하이라이트는 구획 안에서만)
   continueTarget(info) {
     const view = this.view;
     if (!info || this.isPdf || view?.kind !== 'paged' || info.u !== view.s || !view.pageOfOffset) return null;
     const text = textOf(info.root);
     let last = info.end - 1;
     while (last > info.start && !text[last].trim()) last--;
-    let next = info.end;
-    while (next < text.length && !text[next].trim()) next++;
-    if (next >= text.length) return null;
+    if (view.pageOfOffset(last) !== view.page) return null;
     const w = view.wins?.[view.wi];
-    if (w && next >= w.to) return null;
+    const stop = w ? Math.min(w.to, text.length) : text.length;
+    // next = 다음 쪽의 첫 글자. 가는 길에 이 쪽 글자를 CONT_SLACK 개 넘게 지나면 쪽 끝이 아니다
+    let next = info.end;
+    for (let left = 0; next < stop; next++) {
+      if (!text[next].trim()) continue;
+      if (view.pageOfOffset(next) > view.page) break;
+      if (++left > CONT_SLACK) return null;
+    }
+    if (next >= stop) return null;
     const page = view.pageOfOffset(next);
-    if (view.pageOfOffset(last) !== view.page || page <= view.page) return null;
     let end = Math.max(next + 1, sentenceBounds(text, next).end);
     while (end > next + 1 && !text[end - 1].trim()) end--;
     if (view.pageOfOffset(end - 1) > page) {
