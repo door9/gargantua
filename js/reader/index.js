@@ -21,6 +21,9 @@ import * as panels from './panels.js';
 import { lookupMenu, citeText, noteEditor, tagsOf, shareQuoteCard } from './actions.js';
 import { fetchRemoteFile, isStale, whenFresh, pullOcr, pushOcrIfBehind } from '../sync/sync.js';
 import { startOcr } from './ocrsheet.js';
+import { fixesOf, fixSig, fixAnchor, planFixes, patchBook, origToCur, curToOrig } from '../fixes.js';
+import { openSpacing, openFixList } from './spacing.js';
+import { pickReplacement } from '../replace.js';
 
 export const COLORS = [
   { name: '노랑', key: 'yellow' },
@@ -250,6 +253,8 @@ class Reader {
 
   // 읽던 자리 쓰기 — 다른 기기의 변경을 받기 전이면 쓰지 않고 모아 둔다(화면 쪽 값만 바꾼다)
   writePos(patch, { immediate = false } = {}) {
+    // 원본 파일을 바꾸는 중·바꾼 뒤 — 옛 원본 기준 자리를 쓰지 않는다(새 원본 기준 자리는 replace.js 가 이미 썼다)
+    if (this.frozen) return this.pos;
     if (this.holdPos) {
       this.heldPatch = { ...this.heldPatch, ...patch };
       this.pos = { ...this.pos, ...patch };
@@ -294,7 +299,7 @@ class Reader {
   // 받기가 끝나기 전에 나가거나 닫을 때 — 연 자리에서 실제로 읽어 나갔으면 그 자리는 써 둔다(이 기기에서 가장 최근에 읽은 곳).
   // 그대로 두면 앱이 닫히며 읽은 만큼이 사라진다
   commitHeld() {
-    if (!this.holdPos || !this.heldPatch || !this.heldMoved(this.heldPatch)) return;
+    if (this.frozen || !this.holdPos || !this.heldPatch || !this.heldMoved(this.heldPatch)) return;
     this.heldRec = savePos(this.doc.id, { ...this.heldPatch, ...this.openedPatch }, { immediate: true });
   }
 
@@ -317,8 +322,7 @@ class Reader {
   async loadText() {
     const rec = this.bookRec || await loadBook(this.doc, { onStatus: (m) => this.setLoading(m), fetchFile: fetchRemoteFile });
     this.bookRec = rec;
-    this.book = rec.book;
-    this.texts = rec.texts;
+    this.applyFixes();
     this.chapters = buildChapters(this.book, this.texts);
     this.bodySigs = this.doc.format === 'epub' ? bodyParaSigs(this.book) : null;
     if (this.doc.format === 'pdf') {
@@ -1008,6 +1012,119 @@ class Reader {
     this.flashTimer = setTimeout(() => this.painter.remove('flash'), 1800);
   }
 
+  // ── 띄어쓰기 고침(fixes.js) ──
+  // 변환본(bookRec)은 그대로 두고 고침을 입힌 책·글을 this.book·this.texts 로 쓴다
+  applyFixes() {
+    const rec = this.bookRec;
+    const fixes = fixesOf(this.doc.id);
+    const { plan } = planFixes(rec.texts, fixes);
+    const { book, texts } = patchBook(rec.book, rec.texts, plan);
+    this.book = book;
+    this.texts = texts;
+    this.fixPlan = plan;
+    this.fixSigNow = fixSig(fixes);
+  }
+
+  // 고침을 더하거나 되돌린다. changes: [{add: {op, o}} | {remove: [id…]} | {restore: [기록…]}] — u 구획, o 는 원래 글 위치.
+  // 그 구획의 하이라이트·책갈피를 고친 글로 옮기고(다른 기기에도 그대로 가게 기록을 고친다) 같은 자리로 다시 그린다
+  async applyFixChange(u, changes, { announce = true } = {}) {
+    if (this.isPdf || !this.bookRec?.texts || !changes?.length) return null;
+    const base = this.bookRec.texts[u];
+    const oldPlan = this.fixPlan;
+    const here = this.view?.currentLoc();
+    // 옮길 것: 지금(고치기 전 글) 위치
+    const hl = [];
+    for (const ann of this.annsOfDoc('hl')) {
+      const r = this.resolve(ann);
+      if (r) hl.push({ ann, r });
+    }
+    const added = [];
+    const removed = [];
+    this.fixBusy = true;
+    try {
+      for (const c of changes) {
+        if (c.add) {
+          const rec = await saveAnn({ id: uid('x'), docId: this.doc.id, kind: 'fix', op: c.add.op, anchor: fixAnchor(base, u, c.add.o, c.add.op) }, { silent: true });
+          added.push(rec.id);
+        }
+        for (const id of c.remove || []) {
+          const prev = await removeAnn(id, { silent: true });
+          if (prev) removed.push(prev);
+        }
+        for (const snap of c.restore || []) {
+          await restoreAnn(snap, { silent: true });
+          added.push(snap.id);
+        }
+      }
+      await this.refix(oldPlan, here, { hl });
+    } finally {
+      this.fixBusy = false;
+    }
+    if (announce) {
+      toast('띄어쓰기를 고쳤습니다.', {
+        action: '되돌리기',
+        duration: 6000,
+        onAction: () => this.applyFixChange(u, [{ remove: added, restore: removed }], { announce: false }),
+      });
+    }
+    return { added, removed };
+  }
+
+  // 고침 묶음이 바뀐 뒤: 다시 입히고, (이 기기에서 고친 것이면) 하이라이트·책갈피를 옮기고, 같은 글자 자리에서 다시 그린다
+  async refix(oldPlan, here, moving = null) {
+    this.applyFixes();
+    const same = (a = [], b = []) => a.length === b.length && a.every((e, i) => e.o === b[i].o && e.op === b[i].op);
+    const changed = new Set();
+    for (const s of new Set([...oldPlan.keys(), ...this.fixPlan.keys()])) if (!same(oldPlan.get(s), this.fixPlan.get(s))) changed.add(s);
+    const mapper = (s) => {
+      const a = oldPlan.get(s) || [];
+      const b = this.fixPlan.get(s) || [];
+      return (c) => origToCur(b, curToOrig(a, c).o);
+    };
+    if (moving && changed.size) {
+      for (const { ann, r } of moving.hl) {
+        if (!changed.has(r.u)) continue;
+        const map = mapper(r.u);
+        const start = map(r.start);
+        const end = Math.max(start + 1, map(r.end - 1) + 1);
+        const t = this.texts[r.u];
+        const a = ann.anchor || {};
+        const anchor = { ...a, s: r.u, start, end, quote: t.slice(start, end), prefix: t.slice(Math.max(0, start - 32), start), suffix: t.slice(end, end + 32) };
+        if (anchor.start !== a.start || anchor.end !== a.end || anchor.quote !== a.quote || anchor.prefix !== a.prefix || anchor.suffix !== a.suffix || a.s !== r.u) {
+          await saveAnn({ id: ann.id, anchor }, { silent: true });
+        }
+      }
+      for (const b of this.annsOfDoc('bm')) {
+        const a = b.anchor || {};
+        if (!Number.isInteger(a.s) || !changed.has(a.s) || !Number.isInteger(a.o)) continue;
+        const o = mapper(a.s)(a.o);
+        if (o !== a.o) await saveAnn({ id: b.id, anchor: { ...a, o } }, { silent: true });
+      }
+    }
+    const loc = here && changed.has(here.s) && Number.isInteger(here.o) ? { s: here.s, o: mapper(here.s)(here.o) } : here;
+    this.clearSelection();
+    if (this.tts) panels.stopSpeech(this);
+    this.chapters = buildChapters(this.book, this.texts);
+    this.resolved.clear();
+    if (this.view) await this.mountView(this.view.kind, { loc: loc || this.locOf(this.pos), fresh: false });
+    if (this.find?.q) await this.runFind(this.find.q);
+    this.refreshAnns();
+    this.updateFooter();
+  }
+
+  // 다른 기기에서 띄어쓰기를 고쳤다(기록이 들어왔다) — 다시 입혀 그린다. 하이라이트는 고친 기기가 이미 옮겨 보냈다
+  async syncFixes() {
+    if (this.fixBusy || this.isPdf || !this.bookRec?.texts || !this.view || !this.alive) return;
+    if (state.docs.get(this.doc.id)?.fileHash !== this.doc.fileHash) return; // 원본이 바뀜 — 새 원본으로 다시 열 때 입힌다
+    if (fixSig(fixesOf(this.doc.id)) === this.fixSigNow) return;
+    this.fixBusy = true;
+    try {
+      await this.refix(this.fixPlan, this.view.currentLoc(), null);
+    } finally {
+      this.fixBusy = false;
+    }
+  }
+
   // 선택한 글 → {u, start, end, root}
   selectionInfo() {
     if (this.tsel?.on) return this.tsel.info;
@@ -1188,6 +1305,14 @@ class Reader {
         const text = textOf(info.root).slice(info.start, info.end);
         lookupMenu(e.currentTarget, text);
       }));
+    // 띄어쓰기 고치기(줄글·전자책 보기 — 원본 PDF 쪽은 글이 PDF 그대로라 뺀다)
+    if (!this.isPdf) {
+      tool.append(selBtn('spacing', '띄어쓰기', () => {
+        const at = { u: info.u, start: info.start, end: info.end };
+        this.clearSelection();
+        openSpacing(this, at);
+      }));
+    }
     if (overlaps.length) {
       tool.append(selBtn('trash', '지우기', async () => {
         for (const o of overlaps) await removeAnn(o.ann.id);
@@ -1712,10 +1837,31 @@ class Reader {
     items.push({ divider: true });
     items.push({ label: '하이라이트 · 메모', icon: 'highlight', onClick: () => this.showAnnotations() });
     items.push({ label: '책갈피 목록', icon: 'bookmarks', onClick: () => this.showBookmarks() });
+    const fixCount = this.isPdf ? 0 : fixesOf(this.doc.id).length;
+    if (fixCount) items.push({ label: `띄어쓰기 고친 곳 (${fixCount})`, icon: 'spacing', onClick: () => openFixList(this) });
     items.push({ label: '읽기 설정', icon: 'type', onClick: () => this.showSettings() });
     if ('speechSynthesis' in window && !this.isPdf) items.push({ label: this.tts ? '읽어주기 멈춤' : '읽어주기', icon: 'speaker', onClick: () => panels.toggleSpeech(this) });
     items.push({ label: '문서 정보', icon: 'info', onClick: () => this.showInfo() });
+    items.push({ label: '원본 파일 바꾸기', icon: 'replace', onClick: () => this.replaceFile() });
     menu(anchor, items);
+  }
+
+  // 원본 파일 바꾸기(replace.js) — 읽던 자리를 먼저 써 두고, 바꾸는 동안은 옛 원본 기준 자리를 쓰지 않는다. 바꾼 뒤 새 원본으로 다시 연다
+  async replaceFile() {
+    const id = this.doc.id;
+    await pickReplacement(this.doc, {
+      before: async () => {
+        this.flush();
+        await flushPositions();
+        this.frozen = true;
+        this.setLoading('원본 바꾸는 중');
+      },
+      onStatus: (m) => this.setLoading(m),
+      after: async (res) => { if (res?.replaced && this.alive) await openReader(id); },
+    });
+    if (!this.alive) return;
+    this.frozen = false;
+    this.setLoading(null);
   }
 
   applySettings(patch) {
@@ -1785,11 +1931,26 @@ class Reader {
       () => document.removeEventListener('pointerdown', onAct),
       () => document.removeEventListener('visibilitychange', onVis),
       () => window.removeEventListener('resize', onResize),
-      on('anns', (d) => { if (!d || d.docId === this.doc.id) this.refreshAnns(); }),
+      on('anns', (d) => {
+        if (d && d.docId !== this.doc.id) return;
+        this.refreshAnns();
+        this.syncFixes();
+      }),
       on('remote-applied', (d) => {
         // 다른 기기에서 이 문서를 지웠으면 닫는다
-        if (state.docs.get(this.doc.id)?.deleted) { toast('다른 기기에서 이 문서를 서재에서 지웠습니다.'); history.back(); return; }
+        const now = state.docs.get(this.doc.id);
+        if (now?.deleted) { toast('다른 기기에서 이 문서를 서재에서 지웠습니다.'); history.back(); return; }
+        // 다른 기기에서 원본 파일을 바꿨다 — 지금 화면은 옛 원본이다
+        if (now && now.fileHash !== this.doc.fileHash) {
+          if (!this.replacedNotice) {
+            this.replacedNotice = true;
+            toast('다른 기기에서 이 문서의 원본 파일을 바꿨습니다.', { action: '새 원본으로 열기', duration: 10000, onAction: () => openReader(this.doc.id) });
+          }
+          this.refreshAnns();
+          return;
+        }
         this.refreshAnns();
+        this.syncFixes();
         if (d?.pos?.includes(this.doc.id)) this.followRemote();
       }),
     );
@@ -1870,12 +2031,13 @@ class Reader {
   }
 }
 
+// 선택 도구·하이라이트 창의 단추 — 아이콘만(2026-11-24 사용자 "한글은 지우고 아이콘만, 번잡해 보여"). 이름은 aria-label·마우스를 올리면 뜨는 title 로
 function selBtn(icon, label, onClick) {
   return h('button', {
-    class: 'seltool-btn', 'aria-label': label,
+    class: 'seltool-btn', 'aria-label': label, title: label,
     onpointerdown: (e) => e.preventDefault(),
     onclick: onClick,
-    html: `${ico(icon)}<span>${esc(label)}</span>`,
+    html: ico(icon),
   });
 }
 

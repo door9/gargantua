@@ -316,6 +316,7 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
   const putAnns = [];
   const putRev = [];
   const removedDocs = [];
+  const replacedDocs = [];
   const remoteIds = { docs: new Set(), pos: new Set(), anns: new Set(), rev: new Set() };
   const take = (l, r) => !l || (r.updatedAt || 0) > (l.updatedAt || 0);
 
@@ -333,6 +334,8 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
       putDocs.push(rec);
       changed = true;
       if (r.deleted && l && !l.deleted) removedDocs.push(l);
+      // 다른 기기에서 원본 파일을 바꿨다(replace.js) — 옛 변환본·옛 원본은 치운다
+      else if (l && !l.deleted && !r.deleted && l.fileHash && r.fileHash && l.fileHash !== r.fileHash) replacedDocs.push(l);
     } else {
       if ((l.updatedAt || 0) > (r.updatedAt || 0)) needUpload = true;
       if (catWins(r, l)) {
@@ -407,6 +410,20 @@ export async function applyRemote(data, { source = 'sync' } = {}) {
     await dropDocCache(d.id);
     await db.del('info', d.id);
     state.info.delete(d.id);
+    if (!liveDocs().some((x) => x.fileHash === d.fileHash)) {
+      await db.del('files', d.fileHash);
+      (await localFileHashes()).delete(d.fileHash);
+    }
+  }
+  for (const d of replacedDocs) {
+    await dropDocCache(d.id);
+    // 글자 수·장 위치는 새 원본으로 다시 만들게(prepareMissing·처음 열 때) — 읽는 속도 기록과 표지(대개 같은 책)는 남긴다
+    const info = state.info.get(d.id);
+    if (info) {
+      const keep = { docId: d.id, speed: info.speed, cover: info.cover };
+      state.info.set(d.id, keep);
+      await db.put('info', keep);
+    }
     if (!liveDocs().some((x) => x.fileHash === d.fileHash)) {
       await db.del('files', d.fileHash);
       (await localFileHashes()).delete(d.fileHash);

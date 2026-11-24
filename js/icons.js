@@ -68,6 +68,9 @@ const PATHS = {
   panel: '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M14.5 4.5v15"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   dot: '<circle cx="12" cy="12" r="3.5"/>',
+  // 띄어쓰기(두 글 토막 사이의 V — 원고지 띄움표) · 원본 파일 바꾸기(문서 + 돌아가는 화살표)
+  spacing: '<path d="M3 17h6.5M14.5 17h6.5"/><path d="m8.8 6.5 3.2 6 3.2-6"/>',
+  replace: '<path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h5"/><path d="M13 3v5h5V11"/><path d="M14.5 20.5a3.6 3.6 0 0 0 5.8-1.2"/><path d="M20.5 15.5a3.6 3.6 0 0 0-5.8 1.2"/><path d="M20.6 21.3v-2.2h-2.2M14.4 14.7v2.2h2.2"/>',
 };
 
 export function iconSprite() {

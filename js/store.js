@@ -222,19 +222,19 @@ export async function saveAnn(ann, { silent = false } = {}) {
   return rec;
 }
 
-export async function removeAnn(id) {
+export async function removeAnn(id, { silent = false } = {}) {
   const prev = state.anns.get(id);
   if (!prev || prev.deleted) return;
   const rec = stamp({ id, docId: prev.docId, kind: prev.kind, deleted: true }, prev);
   state.anns.set(id, rec);
   await db.put('anns', rec);
   markChanged('ann');
-  emit('anns', { docId: prev.docId, id, removed: true });
+  if (!silent) emit('anns', { docId: prev.docId, id, removed: true });
   return prev;
 }
 
 // 지운 것을 되살리기(알림의 '되돌리기')
-export async function restoreAnn(snapshot) {
+export async function restoreAnn(snapshot, { silent = false } = {}) {
   const prev = state.anns.get(snapshot.id);
   const rec = stamp({ ...snapshot, deleted: undefined }, prev);
   delete rec.deleted;
@@ -242,7 +242,7 @@ export async function restoreAnn(snapshot) {
   indexAnn(rec);
   await db.put('anns', rec);
   markChanged('ann');
-  emit('anns', { docId: rec.docId, id: rec.id });
+  if (!silent) emit('anns', { docId: rec.docId, id: rec.id });
   return rec;
 }
 
@@ -354,7 +354,7 @@ export async function localFileHashes(refresh = false) {
 export function noteFileStored(hash) {
   if (fileKeyCache) fileKeyCache.add(hash);
 }
-async function deleteFileIfUnused(hash) {
+export async function deleteFileIfUnused(hash) {
   if (!hash) return;
   const stillUsed = liveDocs().some((d) => d.fileHash === hash);
   if (stillUsed) return;

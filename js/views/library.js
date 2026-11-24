@@ -7,6 +7,7 @@ import { navigate, openDoc, runImport } from '../main.js';
 import { ACCEPT, FORMATS } from '../parse/index.js';
 import { coverUrlCache } from '../docs.js';
 import { syncStatus, onSyncStatus } from '../sync/sync.js';
+import { pickReplacement } from '../replace.js';
 import { todayStats } from './stats.js';
 
 const covers = coverUrlCache();
@@ -536,9 +537,10 @@ function docMenu(anchor, d) {
       if (!blob) { toast('이 기기에 원본이 없습니다. 먼저 문서를 열어 받아 오세요.'); return; }
       downloadBlob(blob, d.fileName || `${d.title}.${d.format}`);
     } },
+    { label: '원본 파일 바꾸기', icon: 'replace', onClick: () => pickReplacement(d) },
     { divider: true },
     { label: '서재에서 삭제', icon: 'trash', danger: true, onClick: async () => {
-      const n = liveAnns(d.id).length;
+      const n = liveAnns(d.id).filter((a) => a.kind !== 'fix').length;
       const ok = await confirmDialog({
         title: '서재에서 삭제할까요?',
         message: `<p>“${esc(d.title)}”의 보관 사본과 읽기 기록${n ? `, 하이라이트·메모·책갈피 ${n}개` : ''}가 삭제됩니다.</p><p>원래 파일(기기·드라이브에 있는 것)은 지워지지 않습니다.</p>`,

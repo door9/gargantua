@@ -362,6 +362,19 @@ body.reading .gtoast { bottom: calc(24px + var(--safe-b)); }
 .import-status .spinner { width: 20px; height: 20px; }
 @media (min-width: 900px) { .import-status { bottom: 28px; } }
 
+/* 원본 파일 바꾸기(replace.js) — 새 원본 고르기 */
+.rp-body { display: grid; gap: 10px; align-content: start; }
+.rp-label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.rp-list { display: grid; gap: 1px; align-content: start; }
+.rp-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-weight: 400; text-align: left; cursor: pointer; }
+.rp-row:hover { background: var(--surface-2); }
+.rp-ico { flex: none; display: grid; color: var(--muted); }
+.rp-ico .ico { width: 20px; height: 20px; }
+.rp-name { flex: 1; min-width: 0; display: grid; gap: 1px; font-size: 15px; overflow-wrap: anywhere; }
+.rp-name small { font-size: 12.5px; color: var(--muted); }
+.rp-empty { margin: 4px 0; font-size: 14px; color: var(--muted); }
+.rp-lost { margin: 4px 0 0; padding-left: 18px; max-height: 32vh; overflow: auto; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); overflow-wrap: anywhere; }
+
 /* ── 노트 ── */
 .note-tools { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 14px; }
 .note-group { margin-bottom: 22px; }

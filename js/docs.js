@@ -7,6 +7,7 @@ import { unzipEpub, readEpubPackage, epubResources } from './parse/epub.js';
 import { unzipDocx, docxResources } from './parse/docx.js';
 import { uid, baseName, emit, now } from './util.js';
 import { buildChapters } from './reader/chapters.js';
+import { fixesOf, planFixes, patchTexts } from './fixes.js';
 
 // 노트·검색 화면이 책 전체를 열지 않고도 위치(장 제목·%)를 셀 수 있게 작은 요약을 남긴다
 export function bookSummary(book, texts) {
@@ -226,7 +227,12 @@ export async function searchableTexts(doc) {
   if (!cached || cached.fileHash !== doc.fileHash) return null;
   // PDF 는 전자책으로 정리한 글을 먼저(문단이 이어져 있어 찾기가 잘 된다), 없으면 쪽별 글
   if (doc.format === 'pdf' && !(cached.book && cached.book.reflow !== false && cached.texts)) return cached.pdfTexts ? { kind: 'pdf', texts: cached.pdfTexts } : null;
-  if (cached.texts) return { kind: 'text', texts: cached.texts, book: cached.book };
+  if (cached.texts) {
+    // 띄어쓰기 고침을 입힌 글로 찾는다(읽기 화면과 같은 글·같은 위치)
+    const fixes = fixesOf(doc.id);
+    const texts = fixes.length ? patchTexts(cached.texts, planFixes(cached.texts, fixes).plan) : cached.texts;
+    return { kind: 'text', texts, book: cached.book };
+  }
   return null;
 }
 
